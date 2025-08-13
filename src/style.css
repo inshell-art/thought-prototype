@@ -1,0 +1,54 @@
+#preview {
+  display: flex;
+  /* flex row by default; change to column if you prefer */
+  flex-direction: row;
+  /* row  ⇢ side-by-side
+                             column ⇢ stacked vertically */
+  gap: 24px;
+  /* space *between* the two panels */
+  max-width: 100%;
+  border: 1px solid #fff;
+  /* optional frame around the pair */
+  padding: 8px;
+  /* optional inner breathing room */
+}
+
+#source-outpu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* the vertical space */
+  max-width: 100%;
+  border: 1px solid #fff;
+  width: auto;
+  height: auto;
+}
+
+#source-preview {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  /* the vertical space */
+  max-width: 100%;
+  border: 1px solid #fff;
+  width: auto;
+  height: auto;
+}
+
+#wfc-Uint8uOutput-preview {
+  display: block;
+  border: 1px solid #fff;
+  margin-top: 1rem;
+  mix-blend-mode: darken;
+}
+
+#pattern-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* the vertical space */
+  max-width: 100%;
+  border: 1px solid #fff;
+  width: auto;
+  height: auto;
+}
