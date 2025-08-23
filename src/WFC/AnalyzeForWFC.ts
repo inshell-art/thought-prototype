@@ -5,34 +5,37 @@ const splitWords = (input: string): string[] => {
 const longest = (arr: string[]): number => arr.reduce((maxLength, word) => Math.max(maxLength, word.length), 0);
 
 const randomCol = (rnd: () => number): RGBA => {
-    const r = rnd() * 256;
-    const g = rnd() * 256;
-    const b = rnd() * 256;
+    const r = Math.floor(rnd() * 256);
+    const g = Math.floor(rnd() * 256);
+    const b = Math.floor(rnd() * 256);
     return { r, g, b, a: 255 };
 }
 
-const AnalyzeForWFC = (thought: string, rnd: () => number): ThoughtData => {
+const AnalyzeForWFC = (thought: string, rnd: () => number, canvasBg: RGBA): ThoughtData => {
     const wordsRaw = splitWords(thought);
     const chars: CharData[] = [];
     const palette: RGBA[] = [];
-    const colourMap = new Map<string, number>();
+
+    const charColors: Record<string, RGBA> = {};
 
     wordsRaw.forEach((word, wordIdx) => {
         [...word].forEach((ch, x) => {
-            let clrIdx = colourMap.get(ch);
-            if (clrIdx === undefined) {
-                clrIdx = palette.push(randomCol(rnd)) - 1;
-                colourMap.set(ch, clrIdx);
+            if (!charColors[ch]) {
+                ch.trim() === "" ? charColors[ch] =
+                    // { r: 0, g: 0, b: 0, a: 0 }
+                    // { r: 255, g: 255, b: 255, a: 255 }
+                    canvasBg
+                    : charColors[ch] = randomCol(rnd);
             }
             chars.push({
                 ch,
                 x,
                 y: wordIdx,
-                colorIndex: clrIdx,
-                charCol: palette[clrIdx],
+                charCol: charColors[ch]
             });
         });
     });
+
 
     return {
         thoughtStr: thought,
@@ -50,7 +53,6 @@ export interface CharData {
     x: number;
     y: number;
     charCol: RGBA;
-    colorIndex: number;
 }
 
 export interface ThoughtData {

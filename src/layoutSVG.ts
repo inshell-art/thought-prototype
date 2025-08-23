@@ -1,31 +1,29 @@
-import { rectsToPixels } from "./Helpers/BufferTrans";
+import { cellDefinition, rectsToPixels } from "./Helpers/BufferTrans";
 import type { ThoughtData } from "./WFC/AnalyzeForWFC";
 import { OverlappingModel } from "./WFC/WFCAlgorithm";
 import { patternPreview, outputPreview } from "./Helpers/preview";
-import { framesToRectGroups, buildCumulativeDisplaySVG, buildCumulativeOpacitySVG } from "./Helpers/BufferTrans";
-import type { RGBA } from "./WFC/AnalyzeForWFC";
-import { renderText } from "./Helpers/BufferTrans"; 1
+import { iterationsToRectBodies, collapseSVG } from "./Helpers/BufferTrans";
+import { renderText } from "./Helpers/BufferTrans";
+import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
+import type { frameProps } from "./Helpers/BufferTrans";
+import { rgbaToHex } from "./Helpers/BufferTrans";
 
 
 export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => number): string {
-    const WIDTH = 800;
-    const HEIGHT = 800;
-    const padding = WIDTH * 0.1;
-    const innerWidth = WIDTH - padding * 2;
-    const innerHeight = HEIGHT - padding * 2;
-
-
     const str = thoughtData.thoughtStr ?? "";
-    const n = Math.round(Math.sqrt(str.length)) + 8;
+    const n = Math.round(Math.sqrt(str.length)) + 3;
     const { wordMaxLength: srcWidth, wordCount: srcHeight } = thoughtData;
 
     const tilePx = 2;
-    const cellSize = Math.round(Math.min(innerWidth, innerHeight) / n);
+    const cellSize = 1;
+    const padding = 1;
+    const WIDTH = n * cellSize + padding * 2;
+    const HEIGHT = n * cellSize + padding * 2;
+    const canvasBg = { r: 255, g: 255, b: 255, a: 255 };
 
+    const sampleBuf = rectsToPixels(thoughtData, tilePx, canvasBg);
 
-    const sampleBuf = rectsToPixels(thoughtData, tilePx);
-
-    const WFCcfg = {
+    const cfg: WFCCfgProps = {
         data: sampleBuf,
         dataWidth: srcWidth * tilePx,
         dataHeight: srcHeight * tilePx,
@@ -37,63 +35,69 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
         symmetry: 8,
         ground: 0,
     }
-    const model = new OverlappingModel(WFCcfg);
+    const model = new OverlappingModel(
+        cfg.data,
+        cfg.dataWidth,
+        cfg.dataHeight,
+        cfg.N,
+        cfg.outputWidth,
+        cfg.outputHeight,
+        cfg.periodicInput,
+        cfg.periodicOutput,
+        cfg.symmetry,
+        cfg.ground
+    );
     model.initialize()
     model.clear();
 
     const wfcOutput = new Uint8ClampedArray(n * n * 4);
-    const frames: Uint8ClampedArray[] = [];
+
+
+    const frames: frameProps[] = [];
 
 
     while (!model.isGenerationComplete()) {
         model.iterate(1, rnd);
         model.graphics(wfcOutput);
-        outputPreview(wfcOutput, WFCcfg.outputWidth, WFCcfg.outputHeight);
-        frames.push(new Uint8ClampedArray(wfcOutput));
-        console.log(frames.length, "frames generated");
+        const entropies = Float32Array.from(model.getEntropies());
+        const sumsOfOnes = Uint16Array.from(model.getSumsOfOnes());
+        frames.push({ uint8ClampedArray: new Uint8ClampedArray(wfcOutput), entropies: entropies, sumsOfOnes: sumsOfOnes });
+
+        outputPreview(wfcOutput, cfg.outputWidth, cfg.outputHeight);
     }
+    console.log("WFC generation complete");
 
     const patternsSVG = patternPreview(model);
     storage.pattern = patternsSVG;
 
-
-    function collapse() {
-        const result = model.iterate(10, rnd);
-        model.graphics(wfcOutput);
-
-        outputPreview(wfcOutput, WFCcfg.outputWidth, WFCcfg.outputHeight);
-
-        if (!model.isGenerationComplete()) {
-            requestAnimationFrame(collapse);
-        }
-        if (model.isGenerationComplete()) {
-            console.log("Model generation complete");
-        }
-        if (result === false) {
-            console.log("Model encountered a contradiction");
-        }
-    }
-
-    // collapse();
-
-
-    // buildCumulativeDisplaySVG(groups, 1)
-    //   ${ buildCumulativeOpacitySVG(groups,1) }
-
-
-    // const rects = pixelsToRects(wfcOutput, WFCcfg.outputWidth, WFCcfg.outputHeight);
-    // const rectSVG = pixelsToRectSVG(rects, cellSize, padding, padding);
-    const groups = framesToRectGroups(frames, WFCcfg.outputWidth, WFCcfg.outputHeight, cellSize);
+    const groups = iterationsToRectBodies(frames, cfg.outputWidth, cfg.outputHeight, cellSize);
 
 
     return `
-    <svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}"
-         xmlns="http://www.w3.org/2000/svg"
-         style="background:#fff; isolation:isolate">
+<svg width="100%" height="100%" viewBox="0 0 ${WIDTH} ${HEIGHT}"
+    preserveAspectRatio="xMidYMid meet"
+    xmlns="http://www.w3.org/2000/svg" >
+
+    <!-- Background isolated by top-level isolation -->
+    <rect width="100%" height="100%" fill="${rgbaToHex(canvasBg.r, canvasBg.g, canvasBg.b, canvasBg.a)}"/>
+
+    <!-- Cell definitions -->
+      ${cellDefinition(cellSize)}
+
+    <!-- SMIL clock -->
+    <rect width="0" height="0" fill="none">
+    <animate id="timeline" attributeName="x" from="0" to="0" 
+    dur="${groups.length / 10}s" begin="0s;timeline.end"/>
+    </rect>
+
 <g id="blend-stack" transform="translate(${padding},${padding})" style="isolation:isolate">
-    ${buildCumulativeDisplaySVG(groups, 1)}
+    ${collapseSVG(groups)}
 </g>
-      ${renderText(thoughtData, HEIGHT, padding)}
+<g id="THOUGHT-literal" transform="translate(${padding},${HEIGHT - padding})">
+    ${renderText(thoughtData)}
+</g>
+
     </svg>`;
 }
+
 

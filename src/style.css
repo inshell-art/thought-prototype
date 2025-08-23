@@ -1,3 +1,17 @@
+.THOUGHT-canvas {
+  display: block;
+  aspect-ratio: 1 / 1;
+  /* keep square */
+  width: 100vmin;
+  /* fit the smaller viewport side */
+  border: 1px solid #fff;
+  background-color: #000;
+  padding: 1rem;
+  box-sizing: border-box;
+  overflow: auto;
+  margin: auto;
+}
+
 #preview {
   display: flex;
   /* flex row by default; change to column if you prefer */

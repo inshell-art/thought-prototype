@@ -10,6 +10,7 @@ const storage = {
   thoughtStr: "",
   length: 0,
   pattern: "",
+  canvasBg: { r: 255, g: 255, b: 255, a: 255 },
   svg: "",
 };
 
@@ -22,8 +23,7 @@ document.getElementById("mint-btn")!.addEventListener("click", () => {
   storage.length = storage.thoughtStr.length;
 
   const trnd = PRNG(storage.token_id);
-  const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd);
-
+  const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd, storage.canvasBg);
   render(thoughtData);
 
   previewPanel(thoughtData);
@@ -32,14 +32,14 @@ document.getElementById("mint-btn")!.addEventListener("click", () => {
 function render(thoughtData: ThoughtData) {
   const lrnd = PRNG(storage.token_id);
   const svg = layoutSVG(storage, thoughtData, lrnd);
-  (document.getElementById("ThoughtPreview") as HTMLElement).innerHTML = svg;
+  (document.getElementById("THOUGHT-canvas") as HTMLElement).innerHTML = svg;
   storage.svg = svg;
 }
 
 function previewPanel(thoughtData: ThoughtData) {
   const charSrcSVG = charSrcPreview(thoughtData);
 
-  document.getElementById("source-preview")!.innerHTML = charSrcSVG // + wordSrcSVG;
+  document.getElementById("source-preview")!.innerHTML = charSrcSVG; // + wordSrcSVG;
   document.getElementById("pattern-preview")!.innerHTML = storage.pattern;
   (document.getElementById("svg-code") as HTMLElement).textContent = storage.svg;
 }

@@ -21,10 +21,10 @@ export function charSrcPreview(
        text-anchor="middle"
        dominant-baseline="central">`;
 
-  chars.forEach(({ ch, x, y, colorIndex }) => {
+  chars.forEach(({ ch, x, y, charCol }) => {
     const px = x * cell;
     const py = y * cell;
-    const fill = rgbaToCss(palette[colorIndex]);
+    const fill = rgbaToCss(charCol);
 
     svg += `
       <rect x="${px}" y="${py}" width="${cell}" height="${cell}" fill="${fill}"/>
@@ -96,7 +96,7 @@ export function patternPreview(
   cellPx = 8,
   startX = 10,
   startY = 10,
-  maxRowW = 500
+  maxRowW = 400
 ): string {
   const N = model.N;                // pattern side length
   const patW = N * cellPx;           // miniature width  per pattern

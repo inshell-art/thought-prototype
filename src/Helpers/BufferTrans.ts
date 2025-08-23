@@ -1,30 +1,19 @@
 import type { ThoughtData } from "../WFC/AnalyzeForWFC";
 
-export interface Rect {
-    x: number;          // col index
-    y: number;          // row index
-    r: number;
-    g: number;
-    b: number;
-    a: number;
-}
-
-
 export function rectsToPixels(
     data: ThoughtData,
     tilePx: number,
+    canvasBg: { r: number; g: number; b: number; a: number }
 ) {
-    const { chars, palette, wordMaxLength, wordCount } = data;
+    const { chars, wordMaxLength, wordCount } = data;
 
     const width = wordMaxLength * tilePx;
     const height = wordCount * tilePx;
     const buf = new Uint8ClampedArray(width * height * 4);
+    buf.fill(255); // Fill with white (opaque)
 
-    const rgbaTuple = (rgba: { r: number; g: number; b: number; a: number }) =>
-        [rgba.r, rgba.g, rgba.b, rgba.a] as const;
-
-    chars.forEach(({ x, y, colorIndex }) => {
-        const [r, g, b, a] = rgbaTuple(palette[colorIndex]);
+    chars.forEach(({ x, y, charCol }) => {
+        const [r, g, b, a] = rgbaTuple(charCol);
 
         const x0 = x * tilePx;  // top‑left pixel of this square
         const y0 = y * tilePx;
@@ -43,173 +32,120 @@ export function rectsToPixels(
     return buf;
 }
 
+export type frameProps = {
+    uint8ClampedArray: Uint8ClampedArray;
+    entropies: Float32Array;
+    sumsOfOnes: Uint16Array;
+}
 
-
-export function framesToRectGroups(
-    frames: Uint8ClampedArray[],
+export function iterationsToRectBodies(
+    iterations: frameProps[],
     w: number,
     h: number,
-    cellSize: number,
+    cellSize: number
 ): string[] {
+    return iterations.map((buf) => {
+        let bodies = "";
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
 
-    const pixelsToRects = (buf: Uint8ClampedArray): Rect[] => {
-        const rects: Rect[] = [];
-        const stride = w * 4;                    // bytes per scanline
-
-        for (let y = 0; y < h; y += 1) {
-            for (let x = 0; x < w; x += 1) {
-                const idx = y * stride + x * 4;      // sample top-left pixel
-                rects.push({
-                    x: x,
-                    y: y,
-                    r: buf[idx],
-                    g: buf[idx + 1],
-                    b: buf[idx + 2],
-                    a: buf[idx + 3],
-                });
+                const getRGBA = (buf: frameProps, x: number, y: number) => {
+                    const idx = y * w * 4 + x * 4;
+                    return [buf.uint8ClampedArray[idx], buf.uint8ClampedArray[idx + 1], buf.uint8ClampedArray[idx + 2], buf.uint8ClampedArray[idx + 3]];
+                }
+                const [r, g, b, a] = getRGBA(buf, x, y);
+                const status = buf.sumsOfOnes[y * w + x] === 1 ? "Collapsed" : "Superposition"; // buf.sumsOfOnes[y * w + x];
+                bodies += `<use href="#cell" x="${x * cellSize}" y="${y * cellSize}" data-status="${status}" fill="${rgbaToHex(r, g, b, a)}" opacity="0.2"/>\n`;
             }
         }
-        return rects;
-    }
-
-    function pixelsToRectSVG(
-        rects: Rect[],
-        cellSize: number,
-        offsetX = 0,
-        offsetY = 0
-    ): string {
-        return rects
-            .map(
-                ({ x, y, r, g, b, a }) => `
-        <rect x="${x * cellSize + offsetX}" y="${y * cellSize + offsetY}"
-              width="${cellSize}" height="${cellSize}"
-              fill="${rgbaCss(r, g, b, a)}"/>`
-            )
-            .join("");
-    }
-
-    const rgbaCss = (r: number, g: number, b: number, a: number) =>
-        `rgba(${r},${g},${b},${Math.round(10 * a / 255) / 10})`;
-
-    return frames.map((buf, i) => {
-        const rects = pixelsToRects(buf);
-        const body = pixelsToRectSVG(rects, cellSize);
-
-        return `\n<g id="frame-${i}">${body}</g>\n`;
+        return bodies;
     });
 }
 
+export const cellDefinition = (cellSize: number): string => {
+    const size = cellSize;
+    // Offset by -bleed so placing at (x*cellSize, y*cellSize) centers the bleed around the cell
+    return `<defs>
+    <rect id="cell" width="${size}" height="${size}"/>
+  </defs>`;
+};
 
-export function buildCumulativeOpacitySVG(
-    groups: string[],        // your <g id="frame-i">…</g> strings (oldest -> newest)
-    totalDurSec: number      // total timeline duration
-): string {
-    const F = Math.max(groups.length, 1);
-    const frameDur = totalDurSec / F;
 
-    // 1) Master clock that loops the whole sequence
-    const clock = `
-  <rect width="0" height="0" fill="none">
-    <animate id="timeline" attributeName="x" from="0" to="0"
-             dur="${totalDurSec}s" begin="0s;timeline.end"/>
-  </rect>`;
 
-    // 2) Ensure each group starts hidden (opacity=0) and add a tiny step animate
-    const framed = groups.map((g, i) => {
-        const begin = (i * frameDur).toFixed(6) + "s";
-        // inject base opacity=0 into the opening <g …>
-        const gWithOpacity0 = g.replace(/<g(\s+)/, '<g opacity="0"$1');
-        const anim = `
-      <animate attributeName="opacity"
-               from="0" to="1"
-               begin="timeline.begin+${begin}"
-               dur="0.001s"
-               fill="freeze" />`;
-        // insert animate just before </g>
-        return gWithOpacity0.replace(/<\/g>\s*$/, `${anim}\n</g>`);
+export function collapseSVG(bodies: string[]): string {
+    //; mix-blend-mode:darken">
+    const frames = bodies.map((inner, i) => {
+        const begin = `${i / 10}s`;
+        return `
+<g id="iteration-${i}" style="display:none">
+${inner}
+<set attributeName="display" to="inline" begin="timeline.begin+${begin}" fill="freeze" />
+</g>`.trim();
     });
-
-    return `
-  ${clock}
-  ${framed.join("\n")}
-  `;
+    return `${frames.join("\n")}`;
 }
 
 
-export function buildCumulativeDisplaySVG(
-    groups: string[],
-    totalDurSec: number
-): string {
-    const F = Math.max(groups.length, 1);
-    const frameDur = totalDurSec / F;
+export function renderText(thoughtData: ThoughtData): string {
+    const cellSize = 1;
+    const fontSize = 0.5 * cellSize;
+    const charSpan = 0.6 * fontSize;
 
-    const clock = `
-  <rect width="0" height="0" fill="none">
-    <animate id="timeline" attributeName="x" from="0" to="0"
-             dur="${totalDurSec}s" begin="0s;timeline.end"/>
-  </rect>`;
-
-    const framed = groups.map((g, i) => {
-        const begin = (i * frameDur).toFixed(6) + "s";
-        // start hidden via display:none; then flip to inline
-        const gHidden = g.replace(/<g(\s+)/, '<g style="display:none; mix-blend-mode:normal""$1');
-        const set = `
-      <set attributeName="display"
-           to="inline"
-           begin="timeline.begin+${begin}"
-           fill="freeze" />`;
-        return gHidden.replace(/<\/g>\s*$/, `${set}\n</g>`);
-    });
-
-    return `
-  ${clock}
-  ${framed.join("\n")}
-`;
-}
-
-
-export function renderText(thoughtData: ThoughtData, HEIGHT: number, padding: number): string {
-    const fontSize = 50;
-    const charSpan = fontSize * 0.6;            // horizontal advance per char
-    const baselineY = HEIGHT - padding;         // keep your existing baseline
-
-    // rect size behind each glyph
-    const rectW = charSpan / 2;
-    const rectH = fontSize * 0.2;               // a bit shorter than font size             // corner radius (optional)
+    const rectW = 0.5 * charSpan;
+    const rectH = 0.2 * fontSize;
 
     let rects = "";
     let spans = "";
 
     thoughtData.chars.forEach((cd, i) => {
-        // keep the same horizontal placement you already use
-        const xLeft = padding + i * charSpan;
-        const cx = xLeft + charSpan / 2;
-        const cy = baselineY;
+        const cx = fontSize * 0.1 + i * charSpan;
+        const cy = fontSize * 0.1;
 
-        // rect centered under the glyph
-        const rx = cx - rectW / 2;
-        const ry = cy + fontSize / 3;
+        const centerX = cx + charSpan / 2;
+        const centerY = cy + fontSize / 2;
+
+        const rx = centerX - rectW / 2;
+        const ry = centerY - rectH / 2;
 
         const { r, g, b, a } = cd.charCol;
         const fill = `rgba(${r},${g},${b},${(a / 255).toFixed(2)})`;
 
-        // draw the back rect first
-        rects += `<rect x="${rx}" y="${ry}" width="${rectW}" height="${rectH}" fill="${fill}"/>`;
-
-        // then the black character exactly where you had it
-        const ch = cd.ch; // or cd.ch === " " ? "␣" : cd.ch if you want visible spaces
-        spans += `<tspan x="${cx}" y="${cy}">${ch}</tspan>`;
+        rects += `<rect x="${rx}" y="${ry}" width="${rectW}" height="${rectH}" fill="${fill}"/>\n`;
+        spans += `<tspan x="${cx}" y="${cy}">${cd.ch}</tspan>\n`;
     });
 
     return `
     <g>
       ${rects}
-      <text font-family="monospace"
-            font-size="${fontSize}"
-            fill="black"
-            text-anchor="middle"
-            dominant-baseline="hanging">
+      <text
+        font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace"
+        font-size="${fontSize}"
+        fill="black"
+        text-anchor="start"
+        dominant-baseline="hanging"
+        style="font-variant-ligatures:none; letter-spacing:0">
         ${spans}
       </text>
     </g>`;
 }
+
+
+export function rgbaToHex(r: number, g: number, b: number, a: number): string {
+    // Clamp values into 0–255
+    const clamp = (x: number) => Math.max(0, Math.min(255, Math.round(x)));
+
+    const rHex = clamp(r).toString(16).padStart(2, "0");
+    const gHex = clamp(g).toString(16).padStart(2, "0");
+    const bHex = clamp(b).toString(16).padStart(2, "0");
+
+    // Convert alpha (0–255) into 0–255 as well
+    const aHex = clamp(a).toString(16).padStart(2, "0");
+
+    // You can choose whether to include alpha or not
+    return `#${rHex}${gHex}${bHex}${aHex}`;
+}
+
+export const rgbaTuple = (rgba: { r: number; g: number; b: number; a: number }) =>
+    [rgba.r, rgba.g, rgba.b, rgba.a] as const;
+
+
