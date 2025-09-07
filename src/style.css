@@ -2,14 +2,27 @@
   display: block;
   aspect-ratio: 1 / 1;
   /* keep square */
-  width: 100vmin;
+  width: 90vmin;
   /* fit the smaller viewport side */
   border: 1px solid #fff;
   background-color: #000;
-  padding: 1rem;
+  padding: 0.1rem;
   box-sizing: border-box;
   overflow: auto;
   margin: auto;
+}
+
+#input-box {
+  display: flex;
+  width: 90vmin;
+  /* let it keep in center */
+  margin: 0 auto;
+  /* let the box height be determined by its content */
+  height: auto;
+  /* text size */
+  font-size: 2.5rem;
+  line-height: 0.5;
+
 }
 
 #preview {
@@ -51,7 +64,8 @@
 
 #wfc-Uint8uOutput-preview {
   display: block;
-  border: 1px solid #fff;
+  background-color: #000;
+  border: 1px solid #555555;
   margin-top: 1rem;
   mix-blend-mode: darken;
 }

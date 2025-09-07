@@ -4,33 +4,38 @@ import { charSrcPreview } from "./Helpers/preview";
 import { PRNG } from "./Helpers/PRNG";
 import AnalyzeForWFC from "./WFC/AnalyzeForWFC";
 import type { ThoughtData } from "./WFC/AnalyzeForWFC";
+import { DownloadSVG } from "./Helpers/DownloadSVG";
 
 const storage = {
   token_id: (Math.random() * 1e7).toString(),
+  timing: 0,
   thoughtStr: "",
   length: 0,
   pattern: "",
-  canvasBg: { r: 255, g: 255, b: 255, a: 255 },
   svg: "",
 };
 
-// render();
+const inputBox = document.getElementById("input-box") as HTMLInputElement;
+//save the svg as local file
+document.getElementById("btn-save-svg")!.addEventListener("click", () => DownloadSVG(storage.svg));
 
-document.getElementById("mint-btn")!.addEventListener("click", () => {
-  const inputBox = document.getElementById("text-input") as HTMLInputElement;
-  storage.token_id = (Math.random() * 1e7).toString();
-  storage.thoughtStr = inputBox.value;
-  storage.length = storage.thoughtStr.length;
+inputBox.addEventListener("keydown", (event: KeyboardEvent) => {
+  if (event.key === "Enter") {
+    storage.thoughtStr = inputBox.value;
+    storage.length = storage.thoughtStr.length;
+    storage.timing = Date.now();
 
-  const trnd = PRNG(storage.token_id);
-  const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd, storage.canvasBg);
-  render(thoughtData);
+    const trnd = PRNG(storage.token_id + storage.thoughtStr + storage.timing);
+    const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd);
 
-  previewPanel(thoughtData);
+    render(thoughtData);
+    previewPanel(thoughtData);
+  }
 });
 
 function render(thoughtData: ThoughtData) {
-  const lrnd = PRNG(storage.token_id);
+  const lrnd = PRNG(storage.token_id + storage.thoughtStr + storage.timing);
+
   const svg = layoutSVG(storage, thoughtData, lrnd);
   (document.getElementById("THOUGHT-canvas") as HTMLElement).innerHTML = svg;
   storage.svg = svg;
@@ -39,7 +44,8 @@ function render(thoughtData: ThoughtData) {
 function previewPanel(thoughtData: ThoughtData) {
   const charSrcSVG = charSrcPreview(thoughtData);
 
-  document.getElementById("source-preview")!.innerHTML = charSrcSVG; // + wordSrcSVG;
+  document.getElementById("source-preview")!.innerHTML = charSrcSVG;
   document.getElementById("pattern-preview")!.innerHTML = storage.pattern;
   (document.getElementById("svg-code") as HTMLElement).textContent = storage.svg;
+
 }

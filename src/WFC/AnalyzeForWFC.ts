@@ -11,7 +11,7 @@ const randomCol = (rnd: () => number): RGBA => {
     return { r, g, b, a: 255 };
 }
 
-const AnalyzeForWFC = (thought: string, rnd: () => number, canvasBg: RGBA): ThoughtData => {
+const AnalyzeForWFC = (thought: string, rnd: () => number): ThoughtData => {
     const wordsRaw = splitWords(thought);
     const chars: CharData[] = [];
     const palette: RGBA[] = [];
@@ -23,8 +23,8 @@ const AnalyzeForWFC = (thought: string, rnd: () => number, canvasBg: RGBA): Thou
             if (!charColors[ch]) {
                 ch.trim() === "" ? charColors[ch] =
                     // { r: 0, g: 0, b: 0, a: 0 }
-                    // { r: 255, g: 255, b: 255, a: 255 }
-                    canvasBg
+                    { r: 255, g: 255, b: 255, a: 255 }
+                    // canvasBg
                     : charColors[ch] = randomCol(rnd);
             }
             chars.push({

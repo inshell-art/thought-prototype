@@ -8,7 +8,7 @@ export function charSrcPreview(
   data: ThoughtData,
   cell = 30
 ): string {
-  const { chars, palette, wordMaxLength, wordCount } = data;
+  const { chars, wordMaxLength, wordCount } = data;
 
   const w = wordMaxLength * cell;
   const h = wordCount * cell;
@@ -80,7 +80,7 @@ export function outputPreview(
   const canvas = document.getElementById("wfc-Uint8uOutput-preview") as HTMLCanvasElement;
   canvas.width = width;
   canvas.height = height;
-  canvas.getContext("2d")!.putImageData(new ImageData(buf, width, height), 0, 0);
+  canvas.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(buf), width, height), 0, 0);
 
   /* 2 – tell the browser to display the bitmap 10× bigger */
   canvas.style.width = `${width * scale}px`;
