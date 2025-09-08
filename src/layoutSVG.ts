@@ -8,7 +8,7 @@ import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
 import type { frameProps } from "./BufferTrans";
 import { rgbaToHex } from "./BufferTrans";
 import { remap } from "./Helpers/PRNG"
-
+// pangpang is new actually.
 
 export function gridMetrics(n: number) {
     const WIDTH = CANVAS, HEIGHT = CANVAS;
