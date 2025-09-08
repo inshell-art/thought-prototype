@@ -9,36 +9,62 @@ import type { frameProps } from "./BufferTrans";
 import { rgbaToHex } from "./BufferTrans";
 import { remap } from "./Helpers/PRNG"
 
-// MODIFIED: Accept optional fixedGridSize parameter
+
+export function gridMetrics(n: number) {
+    const WIDTH = CANVAS, HEIGHT = CANVAS;
+    const padding = WIDTH * PADDING_FRAC;
+    const inner = WIDTH - 2 * padding;
+
+    const step = inner / n;              // slot width
+    const gapBetween = step * GAP_FRAC;  // gap between neighbors
+    const inset = gapBetween / 2;        // equal margin around each rect
+
+    // Slots (outer frame of the grid)
+    const tx0 = (WIDTH - inner) / 2;
+    const ty0 = (HEIGHT - inner) / 2;
+
+    // Cells (actual rect block used by WFC)
+    const cellSize = step - gapBetween;
+    const txCells = tx0 + inset;
+    const tyCells = ty0 + inset;
+    return { WIDTH, HEIGHT, inner, step, gapBetween, inset, cellSize, tx0, ty0, txCells, tyCells };
+}
+
+
 export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => number, fixedGridSize?: number): string {
     const str = thoughtData.thoughtStr ?? "";
 
-    // MODIFIED: Use fixed grid size if provided, otherwise use original logic
+    const CANVAS = 10;
+    const PADDING_FRAC = 0.10;
+    const GAP_FRAC = remap(0, 1, rnd(), 1); // fraction of cell size
+
     const n = fixedGridSize ?? (str.length > 5 ? Math.round(5 + (Math.sqrt(str.length - 5))) : str.length + 1);
-
-    const { wordMaxLength: srcWidth, wordCount: srcHeight } = thoughtData;
-
-    const tilePx = 2;
-    const cellSize = 1;
-    const cellGap = 0//remap(0, 0.9, rnd(), 2);
-
-    const gridW = n * cellSize + (n - 1) * cellGap;
-    const gridH = n * cellSize + (n - 1) * cellGap;
-
-    const padding = Math.round(gridW / 8);
-
-    const WIDTH = gridW + 2 * padding;
-    const HEIGHT = gridH + 2 * padding;
 
     const opacity = remap(0.1, 1, rnd(), 1);
     const filterFreq = remap(0.1, 1, rnd(), 1);
-    const filterScale = remap(0.1, 0.9, rnd(), 1);
+    const filterScale = remap(0.1, 1, rnd(), 1);
 
-    console.log(`n=${n}`, `cellGap=${cellGap}`, `opacity=${opacity}`, `filterFreq=${filterFreq}`, `filterScale=${filterScale}`);
+    const WIDTH = CANVAS;
+    const HEIGHT = CANVAS;
 
-    const canvasBg = { r: remap(0, 255, rnd(), 1), g: remap(0, 255, rnd(), 1), b: remap(0, 255, rnd(), 1), a: 255 };
+    const padding = WIDTH * PADDING_FRAC;  // 10% of canvas width
+    const inner = WIDTH - 2 * padding;
 
+    const step = inner / n;                // ← your “cell size” by requirement #3
+    const gapBetween = step * GAP_FRAC;       // absolute gap between cells
+    const inset = gapBetween / 2;
+    const cellSize = step - gapBetween;
+    const tx = (WIDTH - inner) / 2 + inset;
+    const ty = (HEIGHT - inner) / 2 + inset;
+
+    const { wordMaxLength: srcWidth, wordCount: srcHeight } = thoughtData;
+    const tilePx = 2;
     const sampleBuf = rectsToPixels(thoughtData, tilePx);
+
+
+    console.log(`n=${n}`, `step=${step}`, `cellGap=${gapBetween}`, `opacity=${opacity}`, `filterFreq=${filterFreq}`, `filterScale=${filterScale}`);
+    // const canvasBg = { r: remap(0, 255, rnd(), 1), g: remap(0, 255, rnd(), 1), b: remap(0, 255, rnd(), 1), a: 255 };
+
 
     const cfg: WFCCfgProps = {
         data: sampleBuf,
@@ -85,7 +111,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     const patternsSVG = patternPreview(model);
     storage.pattern = patternsSVG;
 
-    const groups = iterationsToRectBodies(frames, cfg.outputWidth, cfg.outputHeight, cellSize, cellGap, opacity);
+    const groups = iterationsToRectBodies(frames, cfg.outputWidth, cfg.outputHeight, cellSize, gapBetween, opacity);
 
     return `
 <svg data-THOUGHT="${storage.thoughtStr}" 
@@ -104,9 +130,9 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
             begin="0s;timeline.end"/>
     </rect>
 
-    <rect id="background" width="100%" height="100%" fill="${rgbaToHex(canvasBg.r, canvasBg.g, canvasBg.b, canvasBg.a)}"/>
+    
     <g id="blend-stack"  
-    transform="translate(${(WIDTH - gridW) / 2} , ${(HEIGHT - gridH) / 2}) "
+    transform="translate(${tx} , ${ty}) "
     style="isolation:isolate">
         ${collapseSVG(groups)}
     </g>
@@ -114,6 +140,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
 </svg>`;
 }
 
+// <rect id="background" width = "100%" height = "100%" fill = "${rgbaToHex(canvasBg.r, canvasBg.g, canvasBg.b, canvasBg.a)}" />
 
 // rotate(${ remap(0, 360, rnd(), 0)}, ${ gridW / 2 } ${ gridH / 2 })
 // scale(${ remap(0.5, 1.5, rnd(), 1)})

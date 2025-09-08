@@ -5,6 +5,7 @@ import { PRNG } from "./Helpers/PRNG";
 import AnalyzeForWFC from "./WFC/AnalyzeForWFC";
 import type { ThoughtData } from "./WFC/AnalyzeForWFC";
 import { DownloadSVG } from "./Helpers/DownloadSVG";
+import { computeN, simpleGridSVG } from "./Helpers/preview";
 
 const storage = {
   token_id: (Math.random() * 1e7).toString(),
@@ -16,9 +17,16 @@ const storage = {
 };
 
 const inputBox = document.getElementById("input-box") as HTMLInputElement;
+const canvasEl = document.getElementById("THOUGHT-canvas") as HTMLElement;
+
 //save the svg as local file
 document.getElementById("btn-save-svg")!.addEventListener("click", () => DownloadSVG(storage.svg));
 
+inputBox.addEventListener("input", () => {
+  const s = inputBox.value;
+  const n = Math.max(1, computeN(s));
+  canvasEl.innerHTML = simpleGridSVG(n);
+});
 inputBox.addEventListener("keydown", (event: KeyboardEvent) => {
   if (event.key === "Enter") {
     storage.thoughtStr = inputBox.value;
@@ -49,3 +57,4 @@ function previewPanel(thoughtData: ThoughtData) {
   (document.getElementById("svg-code") as HTMLElement).textContent = storage.svg;
 
 }
+

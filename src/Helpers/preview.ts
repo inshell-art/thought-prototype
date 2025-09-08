@@ -140,3 +140,48 @@ export function patternPreview(
                width="${totalW}" height="${totalH}"
                font-family="monospace">${content}</svg>`;
 }
+
+
+
+
+// --- add near the top ---
+const CANVAS = 10;           // match your layoutSVG viewBox width/height
+const PADDING_FRAC = 0.10;   // 10% padding to match final render
+
+export function computeN(s: string) {
+  return s.length > 5 ? Math.round(5 + Math.sqrt(s.length - 5)) : s.length + 1;
+}
+
+// Build a white-stroke n×n grid with the same padding math
+export function simpleGridSVG(n: number): string {
+  const WIDTH = CANVAS, HEIGHT = CANVAS;
+  const padding = WIDTH * PADDING_FRAC;
+  const inner = WIDTH - 2 * padding;
+  const step = inner / n;
+
+  let lines = `
+    <rect x="${padding}" y="${padding}" width="${inner}" height="${inner}"
+          fill="none" stroke="#fff" stroke-width="1"
+          vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>`;
+
+  for (let i = 1; i < n; i++) {
+    const x = padding + i * step;
+    const y = padding + i * step;
+    lines += `
+      <line x1="${x}" y1="${padding}" x2="${x}" y2="${padding + inner}"
+            stroke="#fff" stroke-width="1"
+            vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>
+      <line x1="${padding}" y1="${y}" x2="${padding + inner}" y2="${y}"
+            stroke="#fff" stroke-width="1"
+            vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>`;
+  }
+
+  return `
+<svg width="100%" height="100%" viewBox="0 0 ${WIDTH} ${HEIGHT}"
+     preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="#000"/>
+  <g style="isolation:isolate">
+    ${lines}
+  </g>
+</svg>`;
+}
