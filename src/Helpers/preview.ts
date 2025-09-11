@@ -6,7 +6,7 @@ const rgbaToCss = ({ r, g, b, a }: RGBA): string =>
 
 export function charSrcPreview(
   data: ThoughtData,
-  cell = 30
+  cell = 20,
 ): string {
   const { chars, wordMaxLength, wordCount } = data;
 
@@ -75,9 +75,10 @@ export function outputPreview(
   buf: Uint8ClampedArray,
   width: number,
   height: number,
-  scale: number = 10
+  scale: number = 10,
+  canvasID: string
 ) {
-  const canvas = document.getElementById("wfc-Uint8uOutput-preview") as HTMLCanvasElement;
+  const canvas = document.getElementById(canvasID) as HTMLCanvasElement;
   canvas.width = width;
   canvas.height = height;
   canvas.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(buf), width, height), 0, 0);
@@ -94,8 +95,8 @@ export function outputPreview(
 export function patternPreview(
   model: any,
   cellPx = 8,
-  startX = 10,
-  startY = 10,
+  startX = 0,
+  startY = 0,
   maxRowW = 400
 ): string {
   const N = model.N;                // pattern side length
@@ -185,3 +186,5 @@ export function simpleGridSVG(n: number): string {
   </g>
 </svg>`;
 }
+
+

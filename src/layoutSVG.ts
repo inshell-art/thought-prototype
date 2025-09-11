@@ -1,42 +1,19 @@
-import { gridFilter, rectsToPixels } from "./BufferTrans";
+
 import type { ThoughtData } from "./WFC/AnalyzeForWFC";
 import { OverlappingModel } from "./WFC/WFCAlgorithm";
-import { patternPreview, outputPreview } from "./Helpers/preview";
-import { iterationsToRectBodies, collapseSVG } from "./BufferTrans";
-import { renderText } from "./BufferTrans";
 import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
+import { rectsToPixels, iterationsToRectBodies, collapseSVG, gridFilter, } from "./BufferTrans";
 import type { frameProps } from "./BufferTrans";
+import { renderText } from "./BufferTrans";
 import { rgbaToHex } from "./BufferTrans";
 import { remap } from "./Helpers/PRNG"
-// pangpang is new actually.
-
-export function gridMetrics(n: number) {
-    const WIDTH = CANVAS, HEIGHT = CANVAS;
-    const padding = WIDTH * PADDING_FRAC;
-    const inner = WIDTH - 2 * padding;
-
-    const step = inner / n;              // slot width
-    const gapBetween = step * GAP_FRAC;  // gap between neighbors
-    const inset = gapBetween / 2;        // equal margin around each rect
-
-    // Slots (outer frame of the grid)
-    const tx0 = (WIDTH - inner) / 2;
-    const ty0 = (HEIGHT - inner) / 2;
-
-    // Cells (actual rect block used by WFC)
-    const cellSize = step - gapBetween;
-    const txCells = tx0 + inset;
-    const tyCells = ty0 + inset;
-    return { WIDTH, HEIGHT, inner, step, gapBetween, inset, cellSize, tx0, ty0, txCells, tyCells };
-}
-
 
 export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => number, fixedGridSize?: number): string {
     const str = thoughtData.thoughtStr ?? "";
 
     const CANVAS = 10;
     const PADDING_FRAC = 0.10;
-    const GAP_FRAC = remap(0, 1, rnd(), 1); // fraction of cell size
+    const GAP_FRAC = 0;//remap(0, 1, rnd(), 1); // fraction of cell size
 
     const n = fixedGridSize ?? (str.length > 5 ? Math.round(5 + (Math.sqrt(str.length - 5))) : str.length + 1);
 
@@ -62,8 +39,8 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     const sampleBuf = rectsToPixels(thoughtData, tilePx);
 
 
-    console.log(`n=${n}`, `step=${step}`, `cellGap=${gapBetween}`, `opacity=${opacity}`, `filterFreq=${filterFreq}`, `filterScale=${filterScale}`);
-    // const canvasBg = { r: remap(0, 255, rnd(), 1), g: remap(0, 255, rnd(), 1), b: remap(0, 255, rnd(), 1), a: 255 };
+    console.log(`THOUGHTString=${storage.thoughtStr}`, `n=${n}`, `step=${step}`, `cellGap=${gapBetween}`, `opacity=${opacity}`, `filterFreq=${filterFreq}`, `filterScale=${filterScale}`);
+    const canvasBg = { r: 0, g: 0, b: 0, a: 255 };
 
 
     const cfg: WFCCfgProps = {
@@ -78,6 +55,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
         symmetry: 8,
         ground: 0,
     }
+    storage.cfg = cfg;
     const model = new OverlappingModel(
         cfg.data,
         cfg.dataWidth,
@@ -93,6 +71,9 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     model.initialize()
     model.clear();
 
+    storage.model = model;
+
+
     const wfcOutput = new Uint8ClampedArray(n * n * 4);
 
     const frames: frameProps[] = [];
@@ -100,16 +81,18 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     while (!model.isGenerationComplete()) {
         model.iterate(1, rnd);
         model.graphics(wfcOutput);
+        storage.wfcOutput = wfcOutput;
+        storage.x_count = cfg.outputWidth;
+        storage.y_count = cfg.outputHeight;
         const entropies = Float32Array.from(model.getEntropies());
         const sumsOfOnes = Uint16Array.from(model.getSumsOfOnes());
         frames.push({ uint8ClampedArray: new Uint8ClampedArray(wfcOutput), entropies: entropies, sumsOfOnes: sumsOfOnes });
 
-        outputPreview(wfcOutput, cfg.outputWidth, cfg.outputHeight);
+
     }
     console.log("WFC generation complete");
 
-    const patternsSVG = patternPreview(model);
-    storage.pattern = patternsSVG;
+
 
     const groups = iterationsToRectBodies(frames, cfg.outputWidth, cfg.outputHeight, cellSize, gapBetween, opacity);
 
@@ -118,11 +101,12 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     width="100%" height="100%" viewBox="0 0 ${WIDTH} ${HEIGHT}" 
     preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 
+    <!-- DISTORTION -->
     <defs>
         ${gridFilter(rnd, groups, filterFreq, filterScale)}
     </defs>
 
-    <!-- SMIL clock -->
+    <!-- TIME -->
     <rect id="clock" width="0" height="0" fill="none">
         <animate id="timeline" 
             attributeName="x" from="0" to="0" 
@@ -130,8 +114,11 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
             begin="0s;timeline.end"/>
     </rect>
 
-    
-    <g id="blend-stack"  
+    <!-- VOID -->
+    <rect id="background" width = "100%" height = "100%" fill = "${rgbaToHex(canvasBg.r, canvasBg.g, canvasBg.b, canvasBg.a)}" />
+
+    <!-- COLLAPSE -->
+    <g id="Iterations"  
     transform="translate(${tx} , ${ty}) "
     style="isolation:isolate">
         ${collapseSVG(groups)}

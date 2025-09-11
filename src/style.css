@@ -2,7 +2,7 @@
   display: block;
   aspect-ratio: 1 / 1;
   /* keep square */
-  width: 90vmin;
+  width: 80vmin;
   /* fit the smaller viewport side */
   border: 1px solid #fff;
   background-color: #000;
@@ -14,7 +14,7 @@
 
 #input-box {
   display: flex;
-  width: 90vmin;
+  width: 80vmin;
   /* let it keep in center */
   margin: 0 auto;
   /* let the box height be determined by its content */
@@ -26,46 +26,30 @@
 }
 
 #preview {
+  margin: 0 auto;
   display: flex;
-  /* flex row by default; change to column if you prefer */
   flex-direction: row;
-  /* row  ⇢ side-by-side
-                             column ⇢ stacked vertically */
-  gap: 24px;
-  /* space *between* the two panels */
-  max-width: 100%;
-  border: 1px solid #fff;
-  /* optional frame around the pair */
-  padding: 8px;
-  /* optional inner breathing room */
-}
-
-#source-outpu {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  /* the vertical space */
-  max-width: 100%;
-  border: 1px solid #fff;
-  width: auto;
-  height: auto;
+  gap: 2px;
+  max-width: 80%;
+  background-color: #00000000;
+  border: 1px solid #d7d7d7;
+  padding: 10px;
 }
 
 #source-preview {
   display: flex;
   flex-direction: row;
-  gap: 12px;
-  /* the vertical space */
+  gap: 0px;
   max-width: 100%;
-  border: 1px solid #fff;
+
   width: auto;
   height: auto;
 }
 
-#wfc-Uint8uOutput-preview {
+#wfc-output-preview {
   display: block;
-  background-color: #000;
-  border: 1px solid #555555;
+  background-color: #00000000;
+  border: 1px solid #cfcfcf;
   margin-top: 1rem;
   mix-blend-mode: darken;
 }
@@ -73,7 +57,7 @@
 #pattern-preview {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   /* the vertical space */
   max-width: 100%;
   border: 1px solid #fff;

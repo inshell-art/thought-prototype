@@ -1,7 +1,47 @@
-
 const splitWords = (input: string): string[] => {
-    return input.match(/^\s+|[^\s]+(?:\s+)?/g) ?? []; // keep all words including spaces
-}//=> input.split(/\s+/).filter((item) => item.trim() !== "");// delete white spaces
+    const words: string[] = [];
+    let i = 0;
+    let curr = "";
+
+    const pushCurr = () => {
+        words.push(curr);
+        curr = "";
+    };
+
+    while (i < input.length) {
+        const ch = input[i];
+        if (ch === "\n") {
+            pushCurr();
+            i += 1;
+            continue;
+        }
+        if (ch === " ") {
+            let j = i;
+            while (j < input.length && input[j] === " ") j++;
+
+            const count = j - i;
+            if (curr.length > 0) {
+                pushCurr();
+                const leading = count - 1;
+                if (leading > 0) {
+                    curr = " ".repeat(leading); // start next token with those spaces
+                }
+            } else {
+                curr += " ".repeat(count);
+            }
+            i = j;
+            continue;
+        }
+        curr += ch;
+        i += 1;
+    }
+
+    // Push the last token (even if it's spaces-only — we preserve intent)
+    if (curr.length > 0) pushCurr();
+
+    return words;
+};
+
 const longest = (arr: string[]): number => arr.reduce((maxLength, word) => Math.max(maxLength, word.length), 0);
 
 const randomCol = (rnd: () => number): RGBA => {
