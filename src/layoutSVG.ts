@@ -24,7 +24,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     const WIDTH = CANVAS;
     const HEIGHT = CANVAS;
 
-    const padding = WIDTH * PADDING_FRAC;  // 10% of canvas width
+    const padding = WIDTH * PADDING_FRAC;  // 10% of canvas width1  
     const inner = WIDTH - 2 * padding;
 
     const step = inner / n;                // ← your “cell size” by requirement #3

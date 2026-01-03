@@ -1,4 +1,4 @@
-import "./style.css";
+
 import { layoutSVG } from "./layoutSVG";
 import { charSrcPreview, outputPreview } from "./Helpers/preview";
 import { PRNG } from "./Helpers/PRNG";
