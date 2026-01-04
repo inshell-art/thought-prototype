@@ -12,17 +12,32 @@
   margin: auto;
 }
 
-#input-box {
+.controls-row {
   display: flex;
+  align-items: center;
+  gap: 0.75rem;
   width: 80vmin;
-  /* let it keep in center */
   margin: 0 auto;
-  /* let the box height be determined by its content */
-  height: auto;
-  /* text size */
-  font-size: 2.5rem;
-  line-height: 0.5;
+}
 
+#input-box {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: auto;
+  font-size: 0.6vmin;
+  line-height: 1.2;
+  padding: 0.2rem 0.4rem;
+}
+
+#index-box {
+  width: 120px;
+  height: auto;
+  font-size: 0.6vmin;
+  padding: 0.25rem 0.4rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  border: 1px solid #d7d7d7;
+  background: #fff;
+  color: #000;
 }
 
 #preview {

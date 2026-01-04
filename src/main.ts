@@ -9,10 +9,9 @@ import { patternPreview } from "./Helpers/preview";
 import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
 // --- augment your storage for previous state
 const storage = {
-  token_id: (Math.random() * 1e7).toString(),
-  timing: 0,
   thoughtStr: "",
   length: 0,
+  index: 0,
   _prevValue: "",          // NEW: last input value
   _prevCaret: 0,           // NEW: last caret position
   model: null,
@@ -22,6 +21,15 @@ const storage = {
 };
 
 const inputBox = document.getElementById("input-box") as HTMLInputElement;
+const indexBox = document.getElementById("index-box") as HTMLInputElement | null;
+
+const readIndex = (): number => {
+  if (!indexBox) return 0;
+  const parsed = Number.parseInt(indexBox.value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+storage.index = readIndex();
 
 // save the svg as local file
 document.getElementById("btn-save-svg")!.addEventListener("click", () => DownloadSVG(storage.svg));
@@ -79,13 +87,23 @@ inputBox.addEventListener("input", (event: Event) => {
   storage._prevCaret = caret;
 });
 
+indexBox?.addEventListener("input", () => {
+  storage.index = readIndex();
+  triggerFromInput();
+});
+indexBox?.addEventListener("change", () => {
+  storage.index = readIndex();
+  triggerFromInput();
+});
+
 // helper to update storage + run your existing pipeline
 function triggerFromInput() {
   storage.thoughtStr = inputBox.value;
   storage.length = storage.thoughtStr.length;
-  storage.timing = Date.now();
+  storage.index = readIndex();
 
-  const trnd = PRNG(storage.token_id + storage.thoughtStr + storage.timing);
+  const seedStr = `THOUGHT_WORKTABLE_V1|${storage.thoughtStr}|${storage.index}`;
+  const trnd = PRNG(seedStr);
   const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd);
 
   render(thoughtData);
@@ -97,7 +115,8 @@ function triggerFromInput() {
 }
 
 function render(thoughtData: ThoughtData) {
-  const lrnd = PRNG(storage.token_id + storage.thoughtStr + storage.timing);
+  const seedStr = `THOUGHT_WORKTABLE_V1|${storage.thoughtStr}|${storage.index}`;
+  const lrnd = PRNG(seedStr);
   const svg = layoutSVG(storage, thoughtData, lrnd);
   (document.getElementById("THOUGHT-canvas") as HTMLElement).innerHTML = svg;
   storage.svg = svg;
@@ -111,4 +130,3 @@ function previewPanel(thoughtData: ThoughtData) {
     (document.getElementById("svg-code") as HTMLElement).textContent = storage.svg;
   }
 }
-

@@ -97,7 +97,8 @@ export function patternPreview(
   cellPx = 8,
   startX = 0,
   startY = 0,
-  maxRowW = 400
+  maxRowW = 400,
+  maxPatterns = Number.POSITIVE_INFINITY
 ): string {
   const N = model.N;                // pattern side length
   const patW = N * cellPx;           // miniature width  per pattern
@@ -109,7 +110,8 @@ export function patternPreview(
 
   const rgba = (c: number[]) => `rgba(${c[0]},${c[1]},${c[2]},${c[3] / 255})`;
 
-  for (let t = 0; t < model.T; t++) {
+  const limit = Math.min(model.T, maxPatterns);
+  for (let t = 0; t < limit; t++) {
     /* ----- build one <g> block for pattern t ----- */
     let g = `<g id="pattern-${t}" transform="translate(${x},${y})">`;
 
@@ -186,5 +188,4 @@ export function simpleGridSVG(n: number): string {
   </g>
 </svg>`;
 }
-
 
