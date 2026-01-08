@@ -408,6 +408,11 @@ export class OverlappingModel extends Model {
             }
         }
 
+        const blankKey = "0-0-0-0";
+        const blankColorIndex = blankKey in colorMap ? colorMap[blankKey] : -1;
+        const patternHasBlank = (p: number[]): boolean =>
+            blankColorIndex >= 0 && p.some((value) => value === blankColorIndex);
+
         const C = this.colors.length;
         const W = Math.pow(C, N * N);
 
@@ -465,8 +470,11 @@ export class OverlappingModel extends Model {
 
         for (let y = 0; y < maxY; y++) {
             for (let x = 0; x < maxX; x++) {
+                const base = patternFromSample(x, y);
+                if (patternHasBlank(base)) continue;
+
                 const ps = new Array<number[]>(8);
-                ps[0] = patternFromSample(x, y);
+                ps[0] = base;
                 ps[1] = reflect(ps[0]);
                 ps[2] = rotate(ps[0]);
                 ps[3] = reflect(ps[2]);
