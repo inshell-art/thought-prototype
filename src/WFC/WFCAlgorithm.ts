@@ -8,7 +8,6 @@ export type WFCCfgProps = {
     periodicInput: boolean;
     periodicOutput: boolean;
     symmetry: number;
-    ground: number;
 } | null
 
 
@@ -26,6 +25,8 @@ export abstract class Model {
     // State flags
     protected initiliazedField = false; // (kept original misspelling for compatibility)
     protected generationComplete = false;
+    protected contradiction = false;
+    protected contradictionCell = -1;
 
     // Core WFC state
     protected wave: boolean[][] = [];
@@ -114,7 +115,13 @@ export abstract class Model {
             if (this.onBoundary(x, y)) continue;
 
             const amount = this.sumsOfOnes[i];
-            if (amount === 0) return false;
+            if (amount === 0) {
+                if (!this.contradiction) {
+                    this.contradiction = true;
+                    this.contradictionCell = i;
+                }
+                return false;
+            }
 
             const entropy = this.entropies[i];
             if (amount > 1 && entropy <= min) {
@@ -277,6 +284,10 @@ export abstract class Model {
         return this.generationComplete;
     }
 
+    public getContradictionCell(): number | null {
+        return this.contradiction ? this.contradictionCell : null;
+    }
+
     /**
      * Ban tile `t` at cell `i` and update entropy sums; push to stack.
      */
@@ -295,6 +306,11 @@ export abstract class Model {
 
         const sum = this.sumsOfWeights[i];
         this.entropies[i] = Math.log(sum) - this.sumsOfWeightLogWeights[i] / sum;
+
+        if (this.sumsOfOnes[i] === 0 && !this.contradiction) {
+            this.contradiction = true;
+            this.contradictionCell = i;
+        }
     }
 
     /**
@@ -317,6 +333,8 @@ export abstract class Model {
 
         this.initiliazedField = true;
         this.generationComplete = false;
+        this.contradiction = false;
+        this.contradictionCell = -1;
     }
 
     // in model.ts
@@ -336,7 +354,6 @@ export class OverlappingModel extends Model {
     private colors: number[][] = [];    // palette of unique RGBA colors
     private patterns: number[][] = [];  // patterns indexed by 0..T-1
     private periodic: boolean;
-    private ground: number;
 
     /**
      * @param data     RGBA pixel data of the source image
@@ -348,7 +365,6 @@ export class OverlappingModel extends Model {
      * @param periodicInput  treat input as toroidal
      * @param periodicOutput make output wrap (toroidal)
      * @param symmetry  number of symmetries to include [1..8]
-     * @param ground    tile index to pin at the bottom (optional)
      */
     constructor(
         data: Uint8Array | Uint8ClampedArray | number[],
@@ -359,8 +375,7 @@ export class OverlappingModel extends Model {
         height: number,
         periodicInput: boolean,
         periodicOutput: boolean,
-        symmetry: number,
-        ground = 0
+        symmetry: number
     ) {
         super();
 
@@ -473,7 +488,6 @@ export class OverlappingModel extends Model {
         }
 
         this.T = weightsKeys.length;
-        this.ground = (ground + this.T) % this.T;
         this.patterns = new Array(this.T);
         this.weights = new Array(this.T);
 
@@ -520,26 +534,6 @@ export class OverlappingModel extends Model {
         );
     }
 
-    /**
-     * Clear the internal state and, if ground is set, constrain the bottom row.
-     */
-    public override clear(): void {
-        super.clear();
-
-        if (this.ground !== 0) {
-            for (let x = 0; x < this.FMX; x++) {
-                for (let t = 0; t < this.T; t++) {
-                    if (t !== this.ground) {
-                        this.ban(x + (this.FMY - 1) * this.FMX, t);
-                    }
-                }
-                for (let y = 0; y < this.FMY - 1; y++) {
-                    this.ban(x + y * this.FMX, this.ground);
-                }
-            }
-            this.propagate();
-        }
-    }
 
     /**
      * Render RGBA data for current state (complete or partial).
@@ -620,4 +614,3 @@ export class OverlappingModel extends Model {
         }
     }
 }
-

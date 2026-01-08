@@ -1,4 +1,3 @@
-
 import { layoutSVG } from "./layoutSVG";
 import { charSrcPreview, outputPreview } from "./Helpers/preview";
 import { PRNG } from "./Helpers/PRNG";
@@ -7,13 +6,14 @@ import type { ThoughtData } from "./WFC/AnalyzeForWFC";
 import { DownloadSVG } from "./Helpers/DownloadSVG";
 import { patternPreview } from "./Helpers/preview";
 import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
+
 // --- augment your storage for previous state
 const storage = {
+  token_id: (Math.random() * 1e7).toString(),
   thoughtStr: "",
   length: 0,
-  index: 0,
-  _prevValue: "",          // NEW: last input value
-  _prevCaret: 0,           // NEW: last caret position
+  _prevValue: "", // last input value
+  _prevCaret: 0, // last caret position
   model: null,
   cfg: {} as WFCCfgProps,
   wfcOutput: new Uint8ClampedArray(0),
@@ -21,15 +21,9 @@ const storage = {
 };
 
 const inputBox = document.getElementById("input-box") as HTMLInputElement;
-const indexBox = document.getElementById("index-box") as HTMLInputElement | null;
+const tokenBox = document.getElementById("token-id") as HTMLInputElement;
 
-const readIndex = (): number => {
-  if (!indexBox) return 0;
-  const parsed = Number.parseInt(indexBox.value, 10);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-storage.index = readIndex();
+tokenBox.value = storage.token_id;
 
 // save the svg as local file
 document.getElementById("btn-save-svg")!.addEventListener("click", () => DownloadSVG(storage.svg));
@@ -41,7 +35,7 @@ inputBox.addEventListener("keydown", (event: KeyboardEvent) => {
   }
 });
 
-// 2) NEW: also trigger when deleting reaches a whitespace boundary and when deleting whitespace
+// 2) also trigger when deleting reaches a whitespace boundary and when deleting whitespace
 // Use the 'input' event so we can inspect the change and caret after it happens.
 inputBox.addEventListener("input", (event: Event) => {
   const currValue = inputBox.value;
@@ -55,7 +49,7 @@ inputBox.addEventListener("input", (event: Event) => {
     type.startsWith("delete") ||
     (prevValue.length > currValue.length && caret <= prevCaret);
 
-  // NEW: figure out which char was deleted (single-char backspace/delete)
+  // figure out which char was deleted (single-char backspace/delete)
   let deletedChar = "";
   const isBackspace = type === "deleteContentBackward";
   const isDeleteFwd = type === "deleteContentForward";
@@ -66,7 +60,7 @@ inputBox.addEventListener("input", (event: Event) => {
     deletedChar = prevValue[prevCaret] ?? "";
   }
 
-  // boundary logic (your existing intent)
+  // boundary logic
   const before = caret > 0 ? currValue[caret - 1] : "";
   const atBoundary = caret === 0 || /\s/.test(before);
   const prevBefore =
@@ -76,8 +70,8 @@ inputBox.addEventListener("input", (event: Event) => {
   const crossedIntoBoundary = atBoundary && !/\s/.test(prevBefore);
 
   // TRIGGER RULES:
-  // 1) crossed into a whitespace boundary (existing)
-  // 2) NEW: the deleted character itself was a space
+  // 1) crossed into a whitespace boundary
+  // 2) deleted character itself was a space
   if (isDeletion && (crossedIntoBoundary || deletedChar === " ")) {
     triggerFromInput();
   }
@@ -87,23 +81,20 @@ inputBox.addEventListener("input", (event: Event) => {
   storage._prevCaret = caret;
 });
 
-indexBox?.addEventListener("input", () => {
-  storage.index = readIndex();
-  triggerFromInput();
-});
-indexBox?.addEventListener("change", () => {
-  storage.index = readIndex();
-  triggerFromInput();
+tokenBox.addEventListener("input", () => {
+  storage.token_id = tokenBox.value.trim() || storage.token_id;
+  if (storage.thoughtStr) {
+    triggerFromInput();
+  }
 });
 
 // helper to update storage + run your existing pipeline
 function triggerFromInput() {
   storage.thoughtStr = inputBox.value;
   storage.length = storage.thoughtStr.length;
-  storage.index = readIndex();
+  const seedKey = storage.token_id + storage.thoughtStr;
 
-  const seedStr = `THOUGHT_WORKTABLE_V1|${storage.thoughtStr}|${storage.index}`;
-  const trnd = PRNG(seedStr);
+  const trnd = PRNG(seedKey);
   const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd);
 
   render(thoughtData);
@@ -115,8 +106,8 @@ function triggerFromInput() {
 }
 
 function render(thoughtData: ThoughtData) {
-  const seedStr = `THOUGHT_WORKTABLE_V1|${storage.thoughtStr}|${storage.index}`;
-  const lrnd = PRNG(seedStr);
+  const seedKey = storage.token_id + storage.thoughtStr;
+  const lrnd = PRNG(seedKey);
   const svg = layoutSVG(storage, thoughtData, lrnd);
   (document.getElementById("THOUGHT-canvas") as HTMLElement).innerHTML = svg;
   storage.svg = svg;
@@ -124,7 +115,13 @@ function render(thoughtData: ThoughtData) {
 
 function previewPanel(thoughtData: ThoughtData) {
   if (storage.model && storage.cfg) {
-    outputPreview(storage.wfcOutput, storage.cfg.outputWidth, storage.cfg.outputHeight, 10, "wfc-output-preview");
+    outputPreview(
+      storage.wfcOutput,
+      storage.cfg.outputWidth,
+      storage.cfg.outputHeight,
+      10,
+      "wfc-output-preview"
+    );
     document.getElementById("source-preview")!.innerHTML = charSrcPreview(thoughtData);
     document.getElementById("pattern-preview")!.innerHTML = patternPreview(storage.model);
     (document.getElementById("svg-code") as HTMLElement).textContent = storage.svg;

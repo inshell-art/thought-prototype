@@ -1,9 +1,7 @@
 .THOUGHT-canvas {
   display: block;
-  aspect-ratio: 1 / 1;
-  /* keep square */
-  width: 80vmin;
-  /* fit the smaller viewport side */
+  width: 800px;
+  height: 800px;
   border: 1px solid #fff;
   background-color: #000;
   padding: 0.1rem;
@@ -12,28 +10,29 @@
   margin: auto;
 }
 
-.controls-row {
+#input-panel {
+  width: 800px;
+  margin: 0.5rem auto 0;
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: 80vmin;
-  margin: 0 auto;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
-#input-box {
-  flex: 1 1 auto;
-  min-width: 0;
+#input-panel label {
+  font-size: 0.6vmin;
+}
+
+#input-box,
+#token-id {
+  width: 100%;
   height: auto;
   font-size: 0.6vmin;
   line-height: 1.2;
   padding: 0.2rem 0.4rem;
+  box-sizing: border-box;
 }
 
-#index-box {
-  width: 120px;
-  height: auto;
-  font-size: 0.6vmin;
-  padding: 0.25rem 0.4rem;
+#token-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   border: 1px solid #d7d7d7;
   background: #fff;

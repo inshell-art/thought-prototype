@@ -1,4 +1,3 @@
-
 import type { ThoughtData } from "./WFC/AnalyzeForWFC";
 import { OverlappingModel } from "./WFC/WFCAlgorithm";
 import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
@@ -78,14 +77,16 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     const str = thoughtData.thoughtStr ?? "";
 
     const CANVAS = 10;
+    const OUTPUT_SIZE = 800;
     const PADDING_FRAC = 0.10;
-    const GAP_FRAC = 0;//remap(0, 1, rnd(), 1); // fraction of cell size
+    const GAP_FRAC = 0; //remap(0, 1, rnd(), 1); // fraction of cell size
 
     const n = fixedGridSize ?? (str.length > 5 ? Math.round(5 + (Math.sqrt(str.length - 5))) : str.length + 1);
 
     const opacity = remap(0.1, 1, rnd(), 1);
-    const filterFreq = remap(0.1, 1, rnd(), 1);
-    const filterScale = remap(0.1, 1, rnd(), 1);
+    const canvasScale = CANVAS / 10;
+    const filterFreq = remap(0.1, 1, rnd(), 1) / canvasScale;
+    const filterScale = remap(0.1, 1, rnd(), 1) * canvasScale;
 
     const WIDTH = CANVAS;
     const HEIGHT = CANVAS;
@@ -97,7 +98,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     const panelHeight = stripHeight;
     const panelPad = Math.min(panelWidth, panelHeight) * 0.22;
 
-    const padding = WIDTH * PADDING_FRAC;  // 10% of canvas width1  
+    const padding = WIDTH * PADDING_FRAC;  // 10% of canvas width1
     const inner = WIDTH - 2 * padding;
 
     const step = inner / n;                // ← your “cell size” by requirement #3
@@ -130,7 +131,6 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
         periodicInput: true,
         periodicOutput: true,
         symmetry: 8,
-        ground: 0,
     }
     storage.cfg = cfg;
     const model = new OverlappingModel(
@@ -142,8 +142,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
         cfg.outputHeight,
         cfg.periodicInput,
         cfg.periodicOutput,
-        cfg.symmetry,
-        cfg.ground
+        cfg.symmetry
     );
     model.initialize()
     model.clear();
@@ -154,9 +153,16 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     const wfcOutput = new Uint8ClampedArray(n * n * 4);
 
     const frames: frameProps[] = [];
+    let contradictionCell: number | null = null;
+    let contradictionFrame = -1;
 
     while (!model.isGenerationComplete()) {
-        model.iterate(1, rnd);
+        const stepResult = model.iterate(1, rnd);
+        if (stepResult === false) {
+            contradictionCell = model.getContradictionCell();
+            contradictionFrame = frames.length;
+            break;
+        }
         model.graphics(wfcOutput);
         storage.wfcOutput = wfcOutput;
         storage.x_count = cfg.outputWidth;
@@ -170,8 +176,22 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     console.log("WFC generation complete");
 
 
-
     const groups = iterationsToRectBodies(frames, cfg.outputWidth, cfg.outputHeight, cellSize, gapBetween, opacity);
+
+    let contradictionOverlay = "";
+    if (contradictionCell !== null) {
+        const cx = contradictionCell % cfg.outputWidth;
+        const cy = Math.floor(contradictionCell / cfg.outputWidth);
+        const px = cx * step + inset;
+        const py = cy * step + inset;
+        const begin = contradictionFrame >= 0 ? contradictionFrame / 10 : 0;
+
+        contradictionOverlay = `
+<g id="contradiction-cell" style="display:none">
+  <rect x="${px}" y="${py}" width="${cellSize}" height="${cellSize}" fill="#000000"/>
+  <set attributeName="display" to="inline" begin="timeline.begin+${begin}s" fill="freeze"/>
+</g>`;
+    }
 
     const panelInnerW = panelWidth - panelPad * 2;
     const panelInnerH = panelHeight - panelPad * 2;
@@ -237,7 +257,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
 
     return `
 <svg data-THOUGHT="${storage.thoughtStr}" 
-    width="100%" height="100%" viewBox="0 0 ${WIDTH} ${HEIGHT}" 
+    width="${OUTPUT_SIZE}" height="${OUTPUT_SIZE}" viewBox="0 0 ${WIDTH} ${HEIGHT}" 
     preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 
     <!-- DISTORTION -->
@@ -262,6 +282,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
         transform="translate(${tx} , ${ty}) "
         style="isolation:isolate">
             ${collapseSVG(groups)}
+            ${contradictionOverlay}
         </g>
     </g>
 
