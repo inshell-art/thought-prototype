@@ -9,7 +9,7 @@ import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
 
 // --- augment your storage for previous state
 const storage = {
-  token_id: (Math.random() * 1e7).toString(),
+  token_id: Math.floor(Math.random() * 1e7).toString(),
   thoughtStr: "",
   length: 0,
   _prevValue: "", // last input value
@@ -82,7 +82,11 @@ inputBox.addEventListener("input", (event: Event) => {
 });
 
 tokenBox.addEventListener("input", () => {
-  storage.token_id = tokenBox.value.trim() || storage.token_id;
+  const digitsOnly = tokenBox.value.replace(/\D+/g, "");
+  if (digitsOnly !== tokenBox.value) {
+    tokenBox.value = digitsOnly;
+  }
+  storage.token_id = digitsOnly || "0";
   if (storage.thoughtStr) {
     triggerFromInput();
   }

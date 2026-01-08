@@ -153,14 +153,14 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     const wfcOutput = new Uint8ClampedArray(n * n * 4);
 
     const frames: frameProps[] = [];
-    let contradictionCell: number | null = null;
-    let contradictionFrame = -1;
+    let blackHoleCell: number | null = null;
+    let blackHoleFrame = -1;
 
     while (!model.isGenerationComplete()) {
         const stepResult = model.iterate(1, rnd);
         if (stepResult === false) {
-            contradictionCell = model.getContradictionCell();
-            contradictionFrame = frames.length;
+            blackHoleCell = model.getBlackHoleCell();
+            blackHoleFrame = frames.length;
             break;
         }
         model.graphics(wfcOutput);
@@ -178,16 +178,17 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
 
     const groups = iterationsToRectBodies(frames, cfg.outputWidth, cfg.outputHeight, cellSize, gapBetween, opacity);
 
-    let contradictionOverlay = "";
-    if (contradictionCell !== null) {
-        const cx = contradictionCell % cfg.outputWidth;
-        const cy = Math.floor(contradictionCell / cfg.outputWidth);
+    let blackHoleOverlay = "";
+    if (blackHoleCell !== null) {
+        const cx = blackHoleCell % cfg.outputWidth;
+        const cy = Math.floor(blackHoleCell / cfg.outputWidth);
         const px = cx * step + inset;
         const py = cy * step + inset;
-        const begin = contradictionFrame >= 0 ? contradictionFrame / 10 : 0;
+        const begin = blackHoleFrame >= 0 ? blackHoleFrame / 10 : 0;
+        const filterFrame = Math.max(0, blackHoleFrame);
 
-        contradictionOverlay = `
-<g id="contradiction-cell" style="display:none">
+        blackHoleOverlay = `
+<g id="black-hole-cell" style="display:none; mix-blend-mode:overlay" filter="url(#wobble-${filterFrame})">
   <rect x="${px}" y="${py}" width="${cellSize}" height="${cellSize}" fill="#000000"/>
   <set attributeName="display" to="inline" begin="timeline.begin+${begin}s" fill="freeze"/>
 </g>`;
@@ -282,7 +283,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
         transform="translate(${tx} , ${ty}) "
         style="isolation:isolate">
             ${collapseSVG(groups)}
-            ${contradictionOverlay}
+            ${blackHoleOverlay}
         </g>
     </g>
 

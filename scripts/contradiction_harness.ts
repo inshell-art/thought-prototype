@@ -100,7 +100,7 @@ const runOnce = (text: string, tokenId: string) => {
 
   const lrnd = PRNG(seedKey);
   const ok = model.generate(lrnd);
-  return { ok, contradictionCell: model.getContradictionCell(), seedKey };
+  return { ok, blackHoleCell: model.getBlackHoleCell(), seedKey };
 };
 
 const findContradictions = () => {
@@ -109,14 +109,14 @@ const findContradictions = () => {
     tokenId: string;
     seedKey: string;
     gridSize: number;
-    contradictionCell: number | null;
+    blackHoleCell: number | null;
   }> = [];
 
   const texts = buildTexts();
 
   for (const text of texts) {
     for (let i = 0; i < tries && results.length < count; i += 1) {
-      const tokenId = `token_${i}`;
+      const tokenId = String(i);
       const result = runOnce(text, tokenId);
       if (!result.ok) {
         results.push({
@@ -124,7 +124,7 @@ const findContradictions = () => {
           tokenId,
           seedKey: result.seedKey,
           gridSize: gridSize(text),
-          contradictionCell: result.contradictionCell,
+          blackHoleCell: result.blackHoleCell,
         });
       }
     }
@@ -134,7 +134,7 @@ const findContradictions = () => {
   let attempts = 0;
   while (results.length < count && attempts < tries * 10) {
     const text = randomText(8, 32);
-    const tokenId = `rand_${attempts}`;
+    const tokenId = String(attempts);
     const result = runOnce(text, tokenId);
     if (!result.ok) {
       results.push({
@@ -142,7 +142,7 @@ const findContradictions = () => {
         tokenId,
         seedKey: result.seedKey,
         gridSize: gridSize(text),
-        contradictionCell: result.contradictionCell,
+        blackHoleCell: result.blackHoleCell,
       });
     }
     attempts += 1;
@@ -155,10 +155,10 @@ const formatMarkdown = (items: ReturnType<typeof findContradictions>) => {
   const lines: string[] = [];
   lines.push("# Contradiction Harness Results");
   lines.push("");
-  lines.push("| Text | token_id | grid | contradiction cell | seed key |");
+  lines.push("| Text | token_id | grid | black hole cell | seed key |");
   lines.push("| --- | --- | --- | --- | --- |");
   for (const item of items) {
-    const cell = item.contradictionCell === null ? "-" : String(item.contradictionCell);
+    const cell = item.blackHoleCell === null ? "-" : String(item.blackHoleCell);
     lines.push(`| ${item.text} | ${item.tokenId} | ${item.gridSize} | ${cell} | ${item.seedKey} |`);
   }
   lines.push("");
@@ -177,8 +177,8 @@ const main = () => {
     console.log(`- text: ${item.text}`);
     console.log(`  token_id: ${item.tokenId}`);
     console.log(`  seed key: ${item.seedKey}`);
-    if (item.contradictionCell !== null) {
-      console.log(`  contradiction cell: ${item.contradictionCell}`);
+    if (item.blackHoleCell !== null) {
+      console.log(`  black hole cell: ${item.blackHoleCell}`);
     }
   }
 

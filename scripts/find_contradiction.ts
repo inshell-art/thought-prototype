@@ -92,8 +92,8 @@ const runOnce = (text: string, tokenId: string) => {
 
   const lrnd = PRNG(seedKey);
   const ok = model.generate(lrnd);
-  const contradictionCell = model.getContradictionCell();
-  return { ok, contradictionCell };
+  const blackHoleCell = model.getBlackHoleCell();
+  return { ok, blackHoleCell };
 };
 
 const main = () => {
@@ -106,13 +106,13 @@ const main = () => {
     let exampleCell: number | null = null;
 
     for (let i = 0; i < seedsPerCandidate; i += 1) {
-      const tokenId = `token_${i}`;
+      const tokenId = String(i);
       const result = runOnce(text, tokenId);
       if (!result.ok) {
         contradictions += 1;
         if (!exampleSeed) {
           exampleSeed = tokenId;
-          exampleCell = result.contradictionCell;
+          exampleCell = result.blackHoleCell;
         }
       }
     }
@@ -126,7 +126,7 @@ const main = () => {
         console.log(`  example token_id: ${exampleSeed}`);
       }
       if (exampleCell !== null) {
-        console.log(`  example cell index: ${exampleCell}`);
+        console.log(`  example black hole cell: ${exampleCell}`);
       }
       return;
     }
@@ -135,14 +135,14 @@ const main = () => {
   const randomAttempts = 2000;
   for (let attempt = 0; attempt < randomAttempts; attempt += 1) {
     const text = randomText(8, 32);
-    const tokenId = `rand_${attempt}`;
+    const tokenId = String(attempt);
     const result = runOnce(text, tokenId);
     if (!result.ok) {
       console.log("Contradiction found in random search:");
       console.log(`  text: ${text}`);
       console.log(`  example token_id: ${tokenId}`);
-      if (result.contradictionCell !== null) {
-        console.log(`  example cell index: ${result.contradictionCell}`);
+      if (result.blackHoleCell !== null) {
+        console.log(`  example black hole cell: ${result.blackHoleCell}`);
       }
       return;
     }

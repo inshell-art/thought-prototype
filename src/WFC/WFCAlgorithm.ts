@@ -26,7 +26,7 @@ export abstract class Model {
     protected initiliazedField = false; // (kept original misspelling for compatibility)
     protected generationComplete = false;
     protected contradiction = false;
-    protected contradictionCell = -1;
+    protected blackHoleCell = -1;
 
     // Core WFC state
     protected wave: boolean[][] = [];
@@ -118,7 +118,7 @@ export abstract class Model {
             if (amount === 0) {
                 if (!this.contradiction) {
                     this.contradiction = true;
-                    this.contradictionCell = i;
+                    this.blackHoleCell = i;
                 }
                 return false;
             }
@@ -284,8 +284,8 @@ export abstract class Model {
         return this.generationComplete;
     }
 
-    public getContradictionCell(): number | null {
-        return this.contradiction ? this.contradictionCell : null;
+    public getBlackHoleCell(): number | null {
+        return this.contradiction ? this.blackHoleCell : null;
     }
 
     /**
@@ -309,7 +309,7 @@ export abstract class Model {
 
         if (this.sumsOfOnes[i] === 0 && !this.contradiction) {
             this.contradiction = true;
-            this.contradictionCell = i;
+            this.blackHoleCell = i;
         }
     }
 
@@ -334,7 +334,7 @@ export abstract class Model {
         this.initiliazedField = true;
         this.generationComplete = false;
         this.contradiction = false;
-        this.contradictionCell = -1;
+        this.blackHoleCell = -1;
     }
 
     // in model.ts
