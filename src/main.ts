@@ -10,7 +10,6 @@ import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
 // --- augment your storage for previous state
 const storage = {
   token_id: (Math.random() * 1e7).toString(),
-  timing: 0,
   thoughtStr: "",
   length: 0,
   _prevValue: "",          // NEW: last input value
@@ -22,6 +21,9 @@ const storage = {
 };
 
 const inputBox = document.getElementById("input-box") as HTMLInputElement;
+const tokenBox = document.getElementById("token-id") as HTMLInputElement;
+
+tokenBox.value = storage.token_id;
 
 // save the svg as local file
 document.getElementById("btn-save-svg")!.addEventListener("click", () => DownloadSVG(storage.svg));
@@ -79,13 +81,20 @@ inputBox.addEventListener("input", (event: Event) => {
   storage._prevCaret = caret;
 });
 
+tokenBox.addEventListener("input", () => {
+  storage.token_id = tokenBox.value.trim() || storage.token_id;
+  if (storage.thoughtStr) {
+    triggerFromInput();
+  }
+});
+
 // helper to update storage + run your existing pipeline
 function triggerFromInput() {
   storage.thoughtStr = inputBox.value;
   storage.length = storage.thoughtStr.length;
-  storage.timing = Date.now();
+  const seedKey = storage.token_id + storage.thoughtStr;
 
-  const trnd = PRNG(storage.token_id + storage.thoughtStr + storage.timing);
+  const trnd = PRNG(seedKey);
   const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd);
 
   render(thoughtData);
@@ -97,7 +106,8 @@ function triggerFromInput() {
 }
 
 function render(thoughtData: ThoughtData) {
-  const lrnd = PRNG(storage.token_id + storage.thoughtStr + storage.timing);
+  const seedKey = storage.token_id + storage.thoughtStr;
+  const lrnd = PRNG(seedKey);
   const svg = layoutSVG(storage, thoughtData, lrnd);
   (document.getElementById("THOUGHT-canvas") as HTMLElement).innerHTML = svg;
   storage.svg = svg;
@@ -111,4 +121,3 @@ function previewPanel(thoughtData: ThoughtData) {
     (document.getElementById("svg-code") as HTMLElement).textContent = storage.svg;
   }
 }
-
