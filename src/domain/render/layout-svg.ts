@@ -1,79 +1,22 @@
-import type { ThoughtData } from "./WFC/AnalyzeForWFC";
-import { OverlappingModel } from "./WFC/WFCAlgorithm";
-import type { WFCCfgProps } from "./WFC/WFCAlgorithm";
-import { rectsToPixels, iterationsToRectBodies, collapseSVG, gridFilter, rgbaToHex } from "./BufferTrans";
-import type { frameProps } from "./BufferTrans";
-import { remap } from "./Helpers/PRNG";
-import { charSrcPreview, patternPreview } from "./Helpers/preview";
+import type { ThoughtData } from "../sample/analyze-for-wfc";
+import { OverlappingModel } from "../wfc/wfc-algorithm";
+import type { WFCCfgProps } from "../wfc/wfc-algorithm";
+import { rectsToPixels } from "./pixels";
+import { iterationsToRectBodies, collapseSVG } from "./frames";
+import type { frameProps } from "./frames";
+import { gridFilter } from "./filters";
+import { rgbaToHex } from "./colors";
+import { embedSvg, escapeXml, clampLines } from "./svg-utils";
+import { remap } from "../../helpers/prng";
+import { charSrcPreview, patternPreview } from "./preview";
 
-const extractViewBox = (svg: string): string | null => {
-    const match = svg.match(/viewBox="([^"]+)"/i);
-    return match ? match[1] : null;
-};
-
-const extractSvgSize = (svg: string): { width: number; height: number } | null => {
-    const widthMatch = svg.match(/width="([^"]+)"/i);
-    const heightMatch = svg.match(/height="([^"]+)"/i);
-    if (!widthMatch || !heightMatch) return null;
-    const width = Number.parseFloat(widthMatch[1]);
-    const height = Number.parseFloat(heightMatch[1]);
-    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
-    return { width, height };
-};
-
-const stripOuterSvg = (svg: string): string =>
-    svg.replace(/^[\s\S]*?<svg[^>]*>/i, "").replace(/<\/svg>\s*$/i, "");
-
-const embedSvg = (
-    svg: string,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-): string => {
-    const viewBox = extractViewBox(svg) ??
-        (() => {
-            const size = extractSvgSize(svg);
-            return size ? `0 0 ${size.width} ${size.height}` : `0 0 ${width} ${height}`;
-        })();
-    const inner = stripOuterSvg(svg);
-    return `<svg x="${x}" y="${y}" width="${width}" height="${height}" viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
-};
-
-const escapeXml = (text: string): string =>
-    text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&apos;");
-
-const clampLines = (text: string, maxChars: number, maxLines: number): string[] => {
-    const rawLines = text.split("\n");
-    const safeMaxChars = Math.max(1, maxChars);
-    const safeMaxLines = Math.max(1, maxLines);
-    const lines: string[] = [];
-
-    for (const raw of rawLines) {
-        if (lines.length >= safeMaxLines) break;
-        if (raw.length <= safeMaxChars) {
-            lines.push(raw);
-        } else {
-            const cut = Math.max(1, safeMaxChars - 3);
-            lines.push(raw.slice(0, cut) + "...");
-        }
-    }
-
-    if (rawLines.length > safeMaxLines && lines.length > 0) {
-        const cut = Math.max(1, safeMaxChars - 3);
-        lines[safeMaxLines - 1] = lines[safeMaxLines - 1].slice(0, cut) + "...";
-        lines.length = safeMaxLines;
-    }
-
-    return lines.length ? lines : [""];
-};
-
-export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => number, fixedGridSize?: number): string {
+export function layoutSVG(
+    storage: any,
+    thoughtData: ThoughtData,
+    wfcRnd: () => number,
+    visualRnd: () => number,
+    fixedGridSize?: number
+): string {
     const str = thoughtData.thoughtStr ?? "";
 
     const CANVAS = 10;
@@ -83,10 +26,10 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
 
     const n = fixedGridSize ?? (str.length > 5 ? Math.round(5 + (Math.sqrt(str.length - 5))) : str.length + 1);
 
-    const opacity = remap(0.1, 1, rnd(), 1);
+    const opacity = remap(0.1, 1, visualRnd(), 1);
     const canvasScale = CANVAS / 10;
-    const filterFreq = remap(0.1, 1, rnd(), 1) / canvasScale;
-    const filterScale = remap(0.1, 1, rnd(), 1) * canvasScale;
+    const filterFreq = remap(0.1, 1, visualRnd(), 1) / canvasScale;
+    const filterScale = remap(0.1, 1, visualRnd(), 1) * canvasScale;
 
     const WIDTH = CANVAS;
     const HEIGHT = CANVAS;
@@ -157,7 +100,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
     let blackHoleFrame = -1;
 
     while (!model.isGenerationComplete()) {
-        const stepResult = model.iterate(1, rnd);
+        const stepResult = model.iterate(1, wfcRnd);
         if (stepResult === false) {
             blackHoleCell = model.getBlackHoleCell();
             blackHoleFrame = frames.length;
@@ -263,7 +206,7 @@ export function layoutSVG(storage: any, thoughtData: ThoughtData, rnd: () => num
 
     <!-- DISTORTION -->
     <defs>
-        ${gridFilter(rnd, groups, filterFreq, filterScale)}
+        ${gridFilter(visualRnd, groups, filterFreq, filterScale)}
     </defs>
 
     <!-- TIME -->

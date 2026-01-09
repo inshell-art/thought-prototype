@@ -1,5 +1,5 @@
-import type { ThoughtData } from "../WFC/AnalyzeForWFC";
-import type { RGBA } from "../WFC/AnalyzeForWFC";
+import type { ThoughtData } from "../sample/analyze-for-wfc";
+import type { RGBA } from "../sample/analyze-for-wfc";
 
 const rgbaToCss = ({ r, g, b, a }: RGBA): string =>
   `rgba(${r},${g},${b},${(a / 255).toFixed(2)})`;
@@ -148,7 +148,7 @@ export function patternPreview(
 
 
 // --- add near the top ---
-const CANVAS = 10;           // match your layoutSVG viewBox width/height
+const CANVAS = 10;           // match your layout-svg viewBox width/height
 const PADDING_FRAC = 0.10;   // 10% padding to match final render
 
 export function computeN(s: string) {
@@ -188,4 +188,3 @@ export function simpleGridSVG(n: number): string {
   </g>
 </svg>`;
 }
-

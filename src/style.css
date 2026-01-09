@@ -11,7 +11,7 @@
   padding: 0.1rem;
   box-sizing: border-box;
   overflow: auto;
-  margin: auto;
+  margin: 0;
 }
 
 html,
@@ -21,9 +21,33 @@ body {
   background: #b3b3b3;
 }
 
+#page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem 0.5rem;
+}
+
+#layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 0 1rem 2rem;
+}
+
+#canvas-column {
+  flex: 0 0 auto;
+}
+
+#controls-column {
+  flex: 1 1 360px;
+  min-width: 320px;
+  max-width: 520px;
+}
+
 #input-panel {
-  width: min(1200px, 95vw);
-  margin: 0.5rem auto 0;
+  width: 100%;
+  margin: 0 0 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -51,11 +75,11 @@ body {
 }
 
 #preview {
-  margin: 0 auto;
+  margin: 0 0 1rem;
   display: flex;
   flex-direction: row;
   gap: 2px;
-  max-width: 80%;
+  width: 100%;
   background-color: #00000000;
   border: 1px solid #d7d7d7;
   padding: 10px;
@@ -88,5 +112,24 @@ body {
   border: 1px solid #fff;
   width: auto;
   height: auto;
+}
+
+#raw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+@media (max-width: 1200px) {
+  #layout {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  #controls-column {
+    width: min(900px, 95vw);
+    max-width: none;
+  }
 }
 .THOUGHT-canvas {

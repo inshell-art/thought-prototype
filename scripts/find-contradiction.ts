@@ -1,7 +1,7 @@
-import AnalyzeForWFC from "../src/WFC/AnalyzeForWFC.ts";
-import { OverlappingModel } from "../src/WFC/WFCAlgorithm.ts";
-import { rectsToPixels } from "../src/BufferTrans.ts";
-import { PRNG } from "../src/Helpers/PRNG.ts";
+import AnalyzeForWFC from "../src/domain/sample/analyze-for-wfc.ts";
+import { OverlappingModel } from "../src/domain/wfc/wfc-algorithm.ts";
+import { rectsToPixels } from "../src/domain/render/pixels.ts";
+import { PRNG } from "../src/helpers/prng.ts";
 
 const BASE_CANDIDATES = [
   "hello hello hel",
