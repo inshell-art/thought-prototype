@@ -10,7 +10,6 @@
   <link rel="stylesheet" href="/src/style.css">
 
   <div id="page-header">
-    <h1>Thought SVG</h1>
     <button id="btn-save-svg">Save SVG</button>
   </div>
 
@@ -30,6 +29,16 @@
           inputmode="numeric"
           pattern="[0-9]*"
           placeholder="set numeric token id for reproducible renders"
+        />
+        <label for="index-id">index</label>
+        <input
+          id="index-id"
+          type="number"
+          min="0"
+          step="1"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          placeholder="set index for reproducible renders"
         />
         <input id="input-box" type="text" size="80" placeholder="Leave your THOUGHT..." />
       </div>

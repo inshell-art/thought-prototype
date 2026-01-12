@@ -2,13 +2,11 @@ import type { ThoughtData } from "../sample/analyze-for-wfc";
 import { OverlappingModel } from "../wfc/wfc-algorithm";
 import type { WFCCfgProps } from "../wfc/wfc-algorithm";
 import { rectsToPixels } from "./pixels";
-import { iterationsToRectBodies, collapseSVG } from "./frames";
+import { collapseSVG, iterationsToRectBodies } from "./frames";
 import type { frameProps } from "./frames";
 import { gridFilter } from "./filters";
 import { rgbaToHex } from "./colors";
-import { embedSvg, escapeXml, clampLines } from "./svg-utils";
 import { remap } from "../../helpers/prng";
-import { charSrcPreview, patternPreview } from "./preview";
 
 export function layoutSVG(
     storage: any,
@@ -20,7 +18,7 @@ export function layoutSVG(
     const str = thoughtData.thoughtStr ?? "";
 
     const CANVAS = 10;
-    const OUTPUT_SIZE = 800;
+    const OUTPUT_SIZE = "100%";
     const PADDING_FRAC = 0.10;
     const GAP_FRAC = 0; //remap(0, 1, rnd(), 1); // fraction of cell size
 
@@ -33,13 +31,10 @@ export function layoutSVG(
 
     const WIDTH = CANVAS;
     const HEIGHT = CANVAS;
-    const MAIN_FRAC = 0.92;
-    const STRIP_FRAC = 1 - MAIN_FRAC;
+    const MAIN_FRAC = 1;
     const mainHeight = HEIGHT * MAIN_FRAC;
-    const stripHeight = HEIGHT * STRIP_FRAC;
-    const panelWidth = WIDTH / 4;
-    const panelHeight = stripHeight;
-    const panelPad = Math.min(panelWidth, panelHeight) * 0.22;
+    const titleHeight = 0.4;
+    const titleBottomOffset = 0.2;
 
     const padding = WIDTH * PADDING_FRAC;  // 10% of canvas width1
     const inner = WIDTH - 2 * padding;
@@ -53,7 +48,10 @@ export function layoutSVG(
     const mainScale = mainHeight / HEIGHT;
     const mainOffsetX = (WIDTH - WIDTH * mainScale) / 2;
     const mainOffsetY = 0;
-    const stripY = mainHeight;
+
+    const titleX = padding;
+    const titleY = HEIGHT - titleBottomOffset - titleHeight;
+    const titleWidth = inner;
 
     const { wordMaxLength: srcWidth, wordCount: srcHeight } = thoughtData;
     const tilePx = 2;
@@ -94,32 +92,45 @@ export function layoutSVG(
 
 
     const wfcOutput = new Uint8ClampedArray(n * n * 4);
-
     const frames: frameProps[] = [];
-    let blackHoleCell: number | null = null;
-    let blackHoleFrame = -1;
+    let blackHoleFrame: number | null = null;
+
+    const pushFrame = () => {
+        model.graphics(wfcOutput);
+        frames.push({
+            uint8ClampedArray: new Uint8ClampedArray(wfcOutput),
+            entropies: Float32Array.from(model.getEntropies()),
+            sumsOfOnes: Uint16Array.from(model.getSumsOfOnes()),
+        });
+        if (blackHoleFrame === null && model.getBlackHoleCell() !== null) {
+            blackHoleFrame = frames.length - 1;
+        }
+    };
 
     while (!model.isGenerationComplete()) {
         const stepResult = model.iterate(1, wfcRnd);
+        pushFrame();
         if (stepResult === false) {
-            blackHoleCell = model.getBlackHoleCell();
-            blackHoleFrame = frames.length;
             break;
         }
-        model.graphics(wfcOutput);
-        storage.wfcOutput = wfcOutput;
-        storage.x_count = cfg.outputWidth;
-        storage.y_count = cfg.outputHeight;
-        const entropies = Float32Array.from(model.getEntropies());
-        const sumsOfOnes = Uint16Array.from(model.getSumsOfOnes());
-        frames.push({ uint8ClampedArray: new Uint8ClampedArray(wfcOutput), entropies: entropies, sumsOfOnes: sumsOfOnes });
-
-
     }
+
+    if (frames.length === 0) {
+        pushFrame();
+    }
+
+    const lastFrame = frames[frames.length - 1];
+    storage.wfcOutput = new Uint8ClampedArray(lastFrame.uint8ClampedArray);
+    storage.x_count = cfg.outputWidth;
+    storage.y_count = cfg.outputHeight;
+
+    const frameBodies =
+        iterationsToRectBodies(frames, cfg.outputWidth, cfg.outputHeight, cellSize, gapBetween, opacity);
+    const frameStack = collapseSVG(frameBodies);
+
     console.log("WFC generation complete");
 
-
-    const groups = iterationsToRectBodies(frames, cfg.outputWidth, cfg.outputHeight, cellSize, gapBetween, opacity);
+    const blackHoleCell = model.getBlackHoleCell();
 
     let blackHoleOverlay = "";
     if (blackHoleCell !== null) {
@@ -127,76 +138,73 @@ export function layoutSVG(
         const cy = Math.floor(blackHoleCell / cfg.outputWidth);
         const px = cx * step + inset;
         const py = cy * step + inset;
-        const begin = blackHoleFrame >= 0 ? blackHoleFrame / 10 : 0;
-        const filterFrame = Math.max(0, blackHoleFrame);
-
+        const lastFilterIndex = Math.max(0, frameBodies.length - 1);
+        const filterIndex = Math.min(
+            blackHoleFrame ?? lastFilterIndex,
+            lastFilterIndex
+        );
+        const filterAttr = frameBodies.length > 0 ? ` filter="url(#wobble-${filterIndex})"` : "";
+        const begin = `${filterIndex / 10}s`;
+        const setDisplay = frameBodies.length > 0
+            ? `<set attributeName="display" to="inline" begin="timeline.begin+${begin}" fill="freeze"/>`
+            : "";
         blackHoleOverlay = `
-<g id="black-hole-cell" style="display:none; mix-blend-mode:overlay" filter="url(#wobble-${filterFrame})">
+<g id="black-hole-cell" style="display:none; mix-blend-mode:overlay"${filterAttr}>
   <rect x="${px}" y="${py}" width="${cellSize}" height="${cellSize}" fill="#000000"/>
-  <set attributeName="display" to="inline" begin="timeline.begin+${begin}s" fill="freeze"/>
+  ${setDisplay}
 </g>`;
     }
 
-    const panelInnerW = panelWidth - panelPad * 2;
-    const panelInnerH = panelHeight - panelPad * 2;
-    const legendScale = 0.4;
-    const legendInnerW = panelInnerW * legendScale;
-    const legendInnerH = panelInnerH * legendScale;
-    const legendOffsetX = panelPad + (panelInnerW - legendInnerW) / 2;
-    const legendOffsetY = panelPad + (panelInnerH - legendInnerH) / 2;
+    const titleChars = Array.from(str.replace(/\n/g, " "));
+    const totalTitleChars = titleChars.length;
+    let titleCols = Math.max(1, totalTitleChars);
+    let titleCellSize = titleCols > 0 ? Math.min(titleWidth / titleCols, titleHeight) : titleHeight;
 
-    const sourceSvg = charSrcPreview(thoughtData);
-    const patternSvg = patternPreview(model);
+    if (totalTitleChars > 0) {
+        for (let rows = 1; rows <= totalTitleChars; rows += 1) {
+            const cols = Math.ceil(totalTitleChars / rows);
+            const cellSize = Math.min(titleWidth / cols, titleHeight / rows);
+            if (cellSize > titleCellSize) {
+                titleCellSize = cellSize;
+                titleCols = cols;
+            }
+        }
+    }
 
-    const textFontSize = Math.max(0.05, legendInnerH * 0.25);
-    const lineHeight = textFontSize * 1.2;
-    const maxChars = Math.floor(legendInnerW / (textFontSize * 0.6));
-    const maxLines = Math.floor(legendInnerH / lineHeight);
-    const lines = clampLines(str, maxChars, maxLines);
-    const textX = legendOffsetX;
-    const textY = legendOffsetY + textFontSize;
-    const textSpans = lines
-        .map((line, index) =>
-            `<tspan x="${textX}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`
-        )
+    const titleFontSize = titleCellSize * 0.6;
+    const titleColorByChar = new Map<string, { r: number; g: number; b: number; a: number }>();
+    for (const { ch, charCol } of thoughtData.chars) {
+        if (!titleColorByChar.has(ch)) {
+            titleColorByChar.set(ch, charCol);
+        }
+    }
+    const titleRects = titleChars
+        .map((ch, idx) => {
+            if (ch === " ") {
+                return "";
+            }
+            const color = titleColorByChar.get(ch) ?? { r: 255, g: 255, b: 255, a: 255 };
+            const row = Math.floor(idx / titleCols);
+            const col = idx % titleCols;
+            const px = titleX + col * titleCellSize;
+            const py = titleY + row * titleCellSize;
+            const displayChar = ch;
+            const luminance = (0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b) / 255;
+            const textColor = luminance > 0.6 ? "#000000" : "#ffffff";
+            return `
+<rect x="${px}" y="${py}" width="${titleCellSize}" height="${titleCellSize}"
+      fill="${rgbaToHex(color.r, color.g, color.b, color.a)}"/>
+<text x="${px + titleCellSize / 2}" y="${py + titleCellSize / 2}"
+      font-family="monospace"
+      font-size="${titleFontSize}"
+      text-anchor="middle"
+      dominant-baseline="central"
+      fill="${textColor}">${displayChar}</text>`;
+        })
         .join("");
-
-    const textPanelInner = `
-<text x="${textX}" y="${textY}"
-      font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace"
-      font-size="${textFontSize}"
-      fill="#ffffff" fill-opacity="0.8"
-      dominant-baseline="hanging"
-      xml:space="preserve">${textSpans}</text>`.trim();
-
-    const sourcePanelInner = embedSvg(sourceSvg, legendOffsetX, legendOffsetY, legendInnerW, legendInnerH);
-
-    const lastFrame = frames[frames.length - 1];
-    const finalGridSize = Math.min(legendInnerW, legendInnerH);
-    const finalCellSize = finalGridSize / Math.max(1, cfg.outputWidth);
-    const finalRects = lastFrame
-        ? iterationsToRectBodies([lastFrame], cfg.outputWidth, cfg.outputHeight, finalCellSize, 0, 1)[0]
-        : "";
-    const finalOffsetX = legendOffsetX + (legendInnerW - finalGridSize) / 2;
-    const finalOffsetY = legendOffsetY + (legendInnerH - finalGridSize) / 2;
-    const finalPanelInner = `<g transform="translate(${finalOffsetX} ${finalOffsetY})">${finalRects}</g>`;
-
-    const patternPanelInner = embedSvg(patternSvg, legendOffsetX, legendOffsetY, legendInnerW, legendInnerH);
-
-    const panelFrame = (id: string, x: number, inner: string): string => `
-<g id="${id}" transform="translate(${x} ${stripY})">
-    <rect width="${panelWidth}" height="${panelHeight}"
-        fill="none" stroke="#ffffff" stroke-opacity="0.2"
-        stroke-width="0.02" vector-effect="non-scaling-stroke"/>
-    ${inner}
-</g>`.trim();
-
-    const bottomStrip = `
-<g id="bottom-strip">
-    ${panelFrame("panel-text", 0, textPanelInner)}
-    ${panelFrame("panel-source", panelWidth, sourcePanelInner)}
-    ${panelFrame("panel-output", panelWidth * 2, finalPanelInner)}
-    ${panelFrame("panel-patterns", panelWidth * 3, patternPanelInner)}
+    const titleGroup = `
+<g id="title">
+    ${titleRects}
 </g>`.trim();
 
     return `
@@ -206,7 +214,7 @@ export function layoutSVG(
 
     <!-- DISTORTION -->
     <defs>
-        ${gridFilter(visualRnd, groups, filterFreq, filterScale)}
+        ${gridFilter(visualRnd, frameBodies, filterFreq, filterScale)}
     </defs>
 
     <!-- TIME -->
@@ -225,13 +233,12 @@ export function layoutSVG(
         <g id="Iterations"
         transform="translate(${tx} , ${ty}) "
         style="isolation:isolate">
-            ${collapseSVG(groups)}
+            ${frameStack}
             ${blackHoleOverlay}
         </g>
     </g>
 
-    <!-- STRIP -->
-    ${bottomStrip}
+    ${titleGroup}
 
 </svg>`;
 }
