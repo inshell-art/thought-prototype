@@ -9,7 +9,7 @@ import type { WFCCfgProps } from "./domain/wfc/wfc-algorithm";
 
 // --- augment your storage for previous state
 const storage = {
-  token_id: Math.floor(Math.random() * 1e7).toString(),
+  account_address: "",
   index: "0",
   thoughtStr: "",
   length: 0,
@@ -20,11 +20,18 @@ const storage = {
 };
 
 const inputBox = document.getElementById("input-box") as HTMLInputElement;
-const tokenBox = document.getElementById("token-id") as HTMLInputElement;
+const accountBox = document.getElementById("account-address") as HTMLInputElement;
 const indexBox = document.getElementById("index-id") as HTMLInputElement;
+const generateButton = document.getElementById("btn-generate") as HTMLButtonElement;
+const warningBox = document.getElementById("input-warning") as HTMLElement;
+const indexUpButton = document.getElementById("btn-index-up") as HTMLButtonElement;
+const indexDownButton = document.getElementById("btn-index-down") as HTMLButtonElement;
 
-tokenBox.value = storage.token_id;
+accountBox.value = storage.account_address;
 indexBox.value = storage.index;
+warningBox.textContent = "";
+
+const MAX_TEXT_LEN = 23;
 
 // save the svg as local file
 document.getElementById("btn-save-svg")!.addEventListener("click", () => DownloadSVG(storage.svg));
@@ -55,6 +62,10 @@ inputBox.addEventListener("keydown", (event: KeyboardEvent) => {
   }
 });
 
+generateButton?.addEventListener("click", () => {
+  void triggerFromInput();
+});
+
 const normalizeInput = (text: string): string => {
   return text
     .replace(/\t/g, " ")
@@ -67,12 +78,28 @@ const normalizeInput = (text: string): string => {
     .join("\n");
 };
 
-tokenBox.addEventListener("input", () => {
-  const digitsOnly = tokenBox.value.replace(/\D+/g, "");
-  if (digitsOnly !== tokenBox.value) {
-    tokenBox.value = digitsOnly;
+const normalizeAccountAddress = (text: string): string => {
+  return text.trim().replace(/\s+/g, "").toLowerCase();
+};
+
+const setInputWarning = (message: string) => {
+  warningBox.textContent = message;
+};
+
+const clampIndex = (value: number) => Math.max(0, value);
+
+const setIndexValue = (value: number) => {
+  const clamped = clampIndex(value);
+  indexBox.value = String(clamped);
+  storage.index = String(clamped);
+};
+
+accountBox.addEventListener("input", () => {
+  const normalized = normalizeAccountAddress(accountBox.value);
+  if (normalized !== accountBox.value) {
+    accountBox.value = normalized;
   }
-  storage.token_id = digitsOnly || "0";
+  storage.account_address = normalized || "0";
 });
 
 indexBox.addEventListener("input", () => {
@@ -83,13 +110,25 @@ indexBox.addEventListener("input", () => {
   storage.index = digitsOnly || "0";
 });
 
+indexUpButton?.addEventListener("click", () => {
+  const current = Number.parseInt(indexBox.value || "0", 10);
+  setIndexValue(Number.isFinite(current) ? current + 1 : 1);
+});
+
+indexDownButton?.addEventListener("click", () => {
+  const current = Number.parseInt(indexBox.value || "0", 10);
+  setIndexValue(Number.isFinite(current) ? current - 1 : 0);
+});
+
 // helper to update storage + run your existing pipeline
 function triggerFromInput() {
-  const tokenDigits = tokenBox.value.replace(/\D+/g, "");
-  if (tokenDigits !== tokenBox.value) {
-    tokenBox.value = tokenDigits;
+  setInputWarning("");
+
+  const normalizedAccount = normalizeAccountAddress(accountBox.value);
+  if (normalizedAccount !== accountBox.value) {
+    accountBox.value = normalizedAccount;
   }
-  storage.token_id = tokenDigits || "0";
+  storage.account_address = normalizedAccount || "0";
 
   const indexDigits = indexBox.value.replace(/\D+/g, "");
   if (indexDigits !== indexBox.value) {
@@ -101,9 +140,14 @@ function triggerFromInput() {
   if (normalizedText !== inputBox.value) {
     inputBox.value = normalizedText;
   }
+  if (normalizedText.length > MAX_TEXT_LEN) {
+    setInputWarning(`Max ${MAX_TEXT_LEN} characters after trimming/collapsing spaces.`);
+    return;
+  }
+
   storage.thoughtStr = normalizedText;
   storage.length = storage.thoughtStr.length;
-  const seedKey = `${storage.token_id}:${storage.index}:${storage.thoughtStr}`;
+  const seedKey = `${storage.account_address}:${storage.index}:${storage.thoughtStr}`;
 
   const trnd = PRNG(seedKey);
   const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd);
@@ -114,7 +158,7 @@ function triggerFromInput() {
 }
 
 function render(thoughtData: ThoughtData) {
-  const seedKey = `${storage.token_id}:${storage.index}:${storage.thoughtStr}`;
+  const seedKey = `${storage.account_address}:${storage.index}:${storage.thoughtStr}`;
   const wfcRnd = PRNG(seedKey);
   const visualRnd = PRNG(`${seedKey}|visual`);
   const svg = layoutSVG(storage, thoughtData, wfcRnd, visualRnd);

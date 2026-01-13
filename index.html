@@ -20,27 +20,32 @@
 
     <div id="controls-column">
       <div id="input-panel">
-        <label for="token-id">token_id</label>
+        <label for="account-address">account_address</label>
         <input
-          id="token-id"
-          type="number"
-          min="0"
-          step="1"
-          inputmode="numeric"
-          pattern="[0-9]*"
-          placeholder="set numeric token id for reproducible renders"
+          id="account-address"
+          type="text"
+          placeholder="set account address for reproducible renders"
         />
         <label for="index-id">index</label>
-        <input
-          id="index-id"
-          type="number"
-          min="0"
-          step="1"
-          inputmode="numeric"
-          pattern="[0-9]*"
-          placeholder="set index for reproducible renders"
-        />
+        <div class="index-row">
+          <input
+            id="index-id"
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            placeholder="set index for reproducible renders"
+          />
+          <div class="index-buttons">
+            <button id="btn-index-up" type="button">+</button>
+            <button id="btn-index-down" type="button">-</button>
+          </div>
+        </div>
+        <label for="input-box">text</label>
         <input id="input-box" type="text" size="80" placeholder="Leave your THOUGHT..." />
+        <div id="input-warning" role="alert" aria-live="polite"></div>
+        <button id="btn-generate" type="button">Generate</button>
       </div>
 
       <div id="preview">
