@@ -1,0 +1,11 @@
+[package]
+name = "thought_preview_contracts"
+version = "0.1.0"
+edition = "2023_10"
+
+[dependencies]
+starknet = "2.7.0"
+
+[[target.starknet-contract]]
+sierra = true
+casm = true
