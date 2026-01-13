@@ -188,18 +188,20 @@ export function layoutSVG(
             const col = idx % titleCols;
             const px = titleX + col * titleCellSize;
             const py = titleY + row * titleCellSize;
-            const displayChar = ch;
             const luminance = (0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b) / 255;
             const textColor = luminance > 0.6 ? "#000000" : "#ffffff";
-            return `
-<rect x="${px}" y="${py}" width="${titleCellSize}" height="${titleCellSize}"
-      fill="${rgbaToHex(color.r, color.g, color.b, color.a)}"/>
-<text x="${px + titleCellSize / 2}" y="${py + titleCellSize / 2}"
+            const centerX = px + titleCellSize / 2;
+            const centerY = py + titleCellSize / 2;
+            const glyphMarkup = `<text x="${centerX}" y="${centerY}"
       font-family="monospace"
       font-size="${titleFontSize}"
       text-anchor="middle"
       dominant-baseline="central"
-      fill="${textColor}">${displayChar}</text>`;
+      fill="${textColor}">${ch}</text>`;
+            return `
+<rect x="${px}" y="${py}" width="${titleCellSize}" height="${titleCellSize}"
+      fill="${rgbaToHex(color.r, color.g, color.b, color.a)}"/>
+${glyphMarkup}`;
         })
         .join("");
     const titleGroup = `

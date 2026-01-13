@@ -51,9 +51,21 @@ copyButton?.addEventListener("click", async () => {
 // 1) Explicit trigger (Enter only)
 inputBox.addEventListener("keydown", (event: KeyboardEvent) => {
   if (event.key === "Enter") {
-    triggerFromInput();
+    void triggerFromInput();
   }
 });
+
+const normalizeInput = (text: string): string => {
+  return text
+    .replace(/\t/g, " ")
+    .split("\n")
+    .map((line) => {
+      const noLeading = line.replace(/^ +/g, "");
+      const collapsed = noLeading.replace(/(\S) +(?=\S)/g, "$1 ");
+      return collapsed.replace(/ +$/g, "");
+    })
+    .join("\n");
+};
 
 tokenBox.addEventListener("input", () => {
   const digitsOnly = tokenBox.value.replace(/\D+/g, "");
@@ -85,7 +97,11 @@ function triggerFromInput() {
   }
   storage.index = indexDigits || "0";
 
-  storage.thoughtStr = inputBox.value;
+  const normalizedText = normalizeInput(inputBox.value);
+  if (normalizedText !== inputBox.value) {
+    inputBox.value = normalizedText;
+  }
+  storage.thoughtStr = normalizedText;
   storage.length = storage.thoughtStr.length;
   const seedKey = `${storage.token_id}:${storage.index}:${storage.thoughtStr}`;
 
