@@ -6,51 +6,55 @@ import { collapseSVG, iterationsToRectBodies } from "./frames";
 import type { frameProps } from "./frames";
 import { gridFilter } from "./filters";
 import { rgbaToHex } from "./colors";
-import { remap } from "../../helpers/prng";
+import type { RNG32 } from "../../helpers/prng";
+import { remapFixed } from "../../helpers/prng";
+import { ceilDiv, formatFixed, fpDiv, fpMul, isqrtRound, FP_SCALE } from "../../helpers/fixed-point";
 
 export function layoutSVG(
     storage: any,
     thoughtData: ThoughtData,
-    wfcRnd: () => number,
-    visualRnd: () => number,
+    wfcRnd: RNG32,
+    visualRnd: RNG32,
     fixedGridSize?: number
 ): string {
     const str = thoughtData.thoughtStr ?? "";
 
     const CANVAS = 10;
     const OUTPUT_SIZE = "100%";
-    const PADDING_FRAC = 0.10;
-    const GAP_FRAC = 0; //remap(0, 1, rnd(), 1); // fraction of cell size
+    const GAP_FRAC_FP = 0;
+    const PADDING_FRAC_FP = 100;
+    const OPACITY_MIN_FP = 100;
+    const OPACITY_MAX_FP = 1000;
 
-    const n = fixedGridSize ?? (str.length > 5 ? Math.round(5 + (Math.sqrt(str.length - 5))) : str.length + 1);
+    const n = fixedGridSize ?? (str.length > 5 ? 5 + isqrtRound(str.length - 5) : str.length + 1);
 
-    const opacity = remap(0.1, 1, visualRnd(), 1);
-    const canvasScale = CANVAS / 10;
-    const filterFreq = remap(0.1, 1, visualRnd(), 1) / canvasScale;
-    const filterScale = remap(0.1, 1, visualRnd(), 1) * canvasScale;
+    const opacity = remapFixed(OPACITY_MIN_FP, OPACITY_MAX_FP, visualRnd);
+    const canvasScaleFp = Math.floor((CANVAS * FP_SCALE) / 10);
+    const filterFreq = fpDiv(remapFixed(OPACITY_MIN_FP, OPACITY_MAX_FP, visualRnd), canvasScaleFp);
+    const filterScale = fpMul(remapFixed(OPACITY_MIN_FP, OPACITY_MAX_FP, visualRnd), canvasScaleFp);
 
-    const WIDTH = CANVAS;
-    const HEIGHT = CANVAS;
-    const MAIN_FRAC = 1;
-    const mainHeight = HEIGHT * MAIN_FRAC;
-    const titleHeight = 0.4;
-    const titleBottomOffset = 0.2;
+    const WIDTH_FP = CANVAS * FP_SCALE;
+    const HEIGHT_FP = CANVAS * FP_SCALE;
+    const MAIN_FRAC_FP = FP_SCALE;
+    const mainHeight = fpMul(HEIGHT_FP, MAIN_FRAC_FP);
+    const titleHeight = 400;
+    const titleBottomOffset = 200;
 
-    const padding = WIDTH * PADDING_FRAC;  // 10% of canvas width1
-    const inner = WIDTH - 2 * padding;
+    const padding = fpMul(WIDTH_FP, PADDING_FRAC_FP);
+    const inner = WIDTH_FP - 2 * padding;
 
-    const step = inner / n;                // ← your “cell size” by requirement #3
-    const gapBetween = step * GAP_FRAC;       // absolute gap between cells
-    const inset = gapBetween / 2;
+    const step = Math.floor(inner / n);
+    const gapBetween = fpMul(step, GAP_FRAC_FP);
+    const inset = Math.floor(gapBetween / 2);
     const cellSize = step - gapBetween;
-    const tx = (WIDTH - inner) / 2 + inset;
-    const ty = (HEIGHT - inner) / 2 + inset;
-    const mainScale = mainHeight / HEIGHT;
-    const mainOffsetX = (WIDTH - WIDTH * mainScale) / 2;
+    const tx = Math.floor((WIDTH_FP - inner) / 2) + inset;
+    const ty = Math.floor((HEIGHT_FP - inner) / 2) + inset;
+    const mainScale = fpDiv(mainHeight, HEIGHT_FP);
+    const mainOffsetX = Math.floor((WIDTH_FP - fpMul(WIDTH_FP, mainScale)) / 2);
     const mainOffsetY = 0;
 
     const titleX = padding;
-    const titleY = HEIGHT - titleBottomOffset - titleHeight;
+    const titleY = HEIGHT_FP - titleBottomOffset - titleHeight;
     const titleWidth = inner;
 
     const { wordMaxLength: srcWidth, wordCount: srcHeight } = thoughtData;
@@ -144,13 +148,13 @@ export function layoutSVG(
             lastFilterIndex
         );
         const filterAttr = frameBodies.length > 0 ? ` filter="url(#wobble-${filterIndex})"` : "";
-        const begin = `${filterIndex / 10}s`;
+        const begin = `${formatFixed(filterIndex, 1)}s`;
         const setDisplay = frameBodies.length > 0
             ? `<set attributeName="display" to="inline" begin="timeline.begin+${begin}" fill="freeze"/>`
             : "";
         blackHoleOverlay = `
 <g id="black-hole-cell" style="display:none; mix-blend-mode:overlay"${filterAttr}>
-  <rect x="${px}" y="${py}" width="${cellSize}" height="${cellSize}" fill="#000000"/>
+  <rect x="${formatFixed(px, 3)}" y="${formatFixed(py, 3)}" width="${formatFixed(cellSize, 3)}" height="${formatFixed(cellSize, 3)}" fill="#000000"/>
   ${setDisplay}
 </g>`;
     }
@@ -158,12 +162,12 @@ export function layoutSVG(
     const titleChars = Array.from(str.replace(/\n/g, " "));
     const totalTitleChars = titleChars.length;
     let titleCols = Math.max(1, totalTitleChars);
-    let titleCellSize = titleCols > 0 ? Math.min(titleWidth / titleCols, titleHeight) : titleHeight;
+    let titleCellSize = titleCols > 0 ? Math.min(Math.floor(titleWidth / titleCols), titleHeight) : titleHeight;
 
     if (totalTitleChars > 0) {
         for (let rows = 1; rows <= totalTitleChars; rows += 1) {
-            const cols = Math.ceil(totalTitleChars / rows);
-            const cellSize = Math.min(titleWidth / cols, titleHeight / rows);
+            const cols = ceilDiv(totalTitleChars, rows);
+            const cellSize = Math.min(Math.floor(titleWidth / cols), Math.floor(titleHeight / rows));
             if (cellSize > titleCellSize) {
                 titleCellSize = cellSize;
                 titleCols = cols;
@@ -171,7 +175,7 @@ export function layoutSVG(
         }
     }
 
-    const titleFontSize = titleCellSize * 0.6;
+    const titleFontSize = Math.floor(titleCellSize * 6 / 10);
     const titleColorByChar = new Map<string, { r: number; g: number; b: number; a: number }>();
     for (const { ch, charCol } of thoughtData.chars) {
         if (!titleColorByChar.has(ch)) {
@@ -188,18 +192,18 @@ export function layoutSVG(
             const col = idx % titleCols;
             const px = titleX + col * titleCellSize;
             const py = titleY + row * titleCellSize;
-            const luminance = (0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b) / 255;
-            const textColor = luminance > 0.6 ? "#000000" : "#ffffff";
-            const centerX = px + titleCellSize / 2;
-            const centerY = py + titleCellSize / 2;
-            const glyphMarkup = `<text x="${centerX}" y="${centerY}"
+            const luminance = 2126 * color.r + 7152 * color.g + 722 * color.b;
+            const textColor = luminance > 1_530_000 ? "#000000" : "#ffffff";
+            const centerX = px + Math.floor(titleCellSize / 2);
+            const centerY = py + Math.floor(titleCellSize / 2);
+            const glyphMarkup = `<text x="${formatFixed(centerX, 3)}" y="${formatFixed(centerY, 3)}"
       font-family="monospace"
-      font-size="${titleFontSize}"
+      font-size="${formatFixed(titleFontSize, 3)}"
       text-anchor="middle"
       dominant-baseline="central"
       fill="${textColor}">${ch}</text>`;
             return `
-<rect x="${px}" y="${py}" width="${titleCellSize}" height="${titleCellSize}"
+<rect x="${formatFixed(px, 3)}" y="${formatFixed(py, 3)}" width="${formatFixed(titleCellSize, 3)}" height="${formatFixed(titleCellSize, 3)}"
       fill="${rgbaToHex(color.r, color.g, color.b, color.a)}"/>
 ${glyphMarkup}`;
         })
@@ -211,7 +215,7 @@ ${glyphMarkup}`;
 
     return `
 <svg data-THOUGHT="${storage.thoughtStr}" 
-    width="${OUTPUT_SIZE}" height="${OUTPUT_SIZE}" viewBox="0 0 ${WIDTH} ${HEIGHT}" 
+    width="${OUTPUT_SIZE}" height="${OUTPUT_SIZE}" viewBox="0 0 ${CANVAS} ${CANVAS}" 
     preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 
     <!-- DISTORTION -->
@@ -231,9 +235,9 @@ ${glyphMarkup}`;
     <rect id="background" width = "100%" height = "100%" fill = "${rgbaToHex(canvasBg.r, canvasBg.g, canvasBg.b, canvasBg.a)}" />
 
     <!-- COLLAPSE -->
-    <g id="main-area" transform="translate(${mainOffsetX} ${mainOffsetY}) scale(${mainScale})">
+    <g id="main-area" transform="translate(${formatFixed(mainOffsetX, 3)} ${formatFixed(mainOffsetY, 3)}) scale(${formatFixed(mainScale, 3)})">
         <g id="Iterations"
-        transform="translate(${tx} , ${ty}) "
+        transform="translate(${formatFixed(tx, 3)} , ${formatFixed(ty, 3)}) "
         style="isolation:isolate">
             ${frameStack}
             ${blackHoleOverlay}

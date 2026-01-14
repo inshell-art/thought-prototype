@@ -12,7 +12,31 @@ export type WFCCfgProps = {
 
 
 
-export type RNG = () => number;
+export type RNG = () => number; // returns unsigned 32-bit integer
+
+const defaultRng: RNG = () => (Math.random() * 0x1_0000_0000) >>> 0;
+
+const rngBool = (rng: RNG): boolean => (rng() & 1) === 1;
+
+const rngRange = (rng: RNG, max: number): number => {
+    if (max <= 0) return 0;
+    return rng() % max;
+};
+
+const weightedRandomIndex = (weights: number[], rng: RNG): number => {
+    let sum = 0;
+    for (let i = 0; i < weights.length; i++) {
+        sum += weights[i];
+    }
+    if (sum <= 0) return 0;
+    const pick = rngRange(rng, sum);
+    let acc = 0;
+    for (let i = 0; i < weights.length; i++) {
+        acc += weights[i];
+        if (pick < acc) return i;
+    }
+    return 0;
+};
 
 export abstract class Model {
     // Dimensions / counts
@@ -34,14 +58,10 @@ export abstract class Model {
     protected propagator!: number[][][];     // [direction][tile] -> list of compatible tiles
 
     protected weights!: number[];
-    protected weightLogWeights: number[] = [];
     protected sumOfWeights = 0;
-    protected sumOfWeightLogWeights = 0;
-    protected startingEntropy = 0;
 
     protected sumsOfOnes: number[] = [];
     protected sumsOfWeights: number[] = [];
-    protected sumsOfWeightLogWeights: number[] = [];
     protected entropies: number[] = [];
 
     protected observed: number[] | null = null;
@@ -75,22 +95,14 @@ export abstract class Model {
             }
         }
 
-        this.weightLogWeights = new Array(this.T);
         this.sumOfWeights = 0;
-        this.sumOfWeightLogWeights = 0;
 
         for (let t = 0; t < this.T; t++) {
-            this.weightLogWeights[t] = this.weights[t] * Math.log(this.weights[t]);
             this.sumOfWeights += this.weights[t];
-            this.sumOfWeightLogWeights += this.weightLogWeights[t];
         }
-
-        this.startingEntropy =
-            Math.log(this.sumOfWeights) - this.sumOfWeightLogWeights / this.sumOfWeights;
 
         this.sumsOfOnes = new Array(this.FMXxFMY);
         this.sumsOfWeights = new Array(this.FMXxFMY);
-        this.sumsOfWeightLogWeights = new Array(this.FMXxFMY);
         this.entropies = new Array(this.FMXxFMY);
 
         // Preallocate stack capacity
@@ -106,7 +118,7 @@ export abstract class Model {
      *  - null  -> collapsed one cell, needs propagation
      */
     protected observe(rng: RNG): boolean | null {
-        let min = 1000;
+        let min = Number.MAX_SAFE_INTEGER;
         let argmin = -1;
 
         for (let i = 0; i < this.FMXxFMY; i++) {
@@ -125,9 +137,8 @@ export abstract class Model {
 
             const entropy = this.entropies[i];
             if (amount > 1 && entropy <= min) {
-                const noise = 0.000001 * rng();
-                if (entropy + noise < min) {
-                    min = entropy + noise;
+                if (entropy < min || rngBool(rng)) {
+                    min = entropy;
                     argmin = i;
                 }
             }
@@ -152,32 +163,7 @@ export abstract class Model {
             this.distribution[t] = this.wave[argmin][t] ? this.weights[t] : 0;
         }
 
-        const randomIndice = (array: number[], r: number) => {
-            let sum = 0;   // Variable to accumulate the total sum of the array's elements
-            let x = 0;     // Variable to track the cumulative sum of elements
-            let i = 0;     // Index variable
-
-            // Step 1: Calculate the sum of all the elements in the array
-            for (; i < array.length; i++) {
-                sum += array[i];  // Accumulate the sum of array elements
-            }
-
-            i = 0;  // Reset the index for the next part of the logic
-            r *= sum;  // Scale the random value `r` by the sum of the array. This "maps" r to the total sum.
-
-            // Step 2: Select an index based on the scaled random value
-            while (r && i < array.length) {   // While we still have a valid `r` and haven't exhausted the array
-                x += array[i];   // Increment the cumulative sum by the current array element
-                if (r <= x) {    // If the random value `r` is less than or equal to the cumulative sum
-                    return i;      // We return the current index `i`
-                }
-                i++;  // Move to the next index
-            }
-
-            return 0;  // If no valid index was found (very unlikely), return 0
-        }
-
-        const r = randomIndice(this.distribution, rng());
+        const r = weightedRandomIndex(this.distribution, rng);
 
         const w = this.wave[argmin];
         for (let t = 0; t < this.T; t++) {
@@ -246,7 +232,7 @@ export abstract class Model {
     /**
      * Run up to `iterations` steps (0 => unlimited) or until terminal result.
      */
-    public iterate(iterations = 0, rng: RNG = Math.random): boolean {
+    public iterate(iterations = 0, rng: RNG = defaultRng): boolean {
         if (!this.wave.length) this.initialize();
         if (!this.initiliazedField) this.clear();
 
@@ -270,7 +256,7 @@ export abstract class Model {
     /**
      * Clear and run to completion (success or contradiction).
      */
-    public generate(rng: RNG = Math.random): boolean {
+    public generate(rng: RNG = defaultRng): boolean {
         if (!this.wave.length) this.initialize();
         this.clear();
         // eslint-disable-next-line no-constant-condition
@@ -302,10 +288,7 @@ export abstract class Model {
 
         this.sumsOfOnes[i] -= 1;
         this.sumsOfWeights[i] -= this.weights[t];
-        this.sumsOfWeightLogWeights[i] -= this.weightLogWeights[t];
-
-        const sum = this.sumsOfWeights[i];
-        this.entropies[i] = Math.log(sum) - this.sumsOfWeightLogWeights[i] / sum;
+        this.entropies[i] = this.sumsOfOnes[i];
 
         if (this.sumsOfOnes[i] === 0 && !this.contradiction) {
             this.contradiction = true;
@@ -327,8 +310,7 @@ export abstract class Model {
 
             this.sumsOfOnes[i] = this.weights.length;
             this.sumsOfWeights[i] = this.sumOfWeights;
-            this.sumsOfWeightLogWeights[i] = this.sumOfWeightLogWeights;
-            this.entropies[i] = this.startingEntropy;
+            this.entropies[i] = this.sumsOfOnes[i];
         }
 
         this.initiliazedField = true;
@@ -615,10 +597,17 @@ export class OverlappingModel extends Model {
             }
 
             const pixelIndex = i * 4;
-            array[pixelIndex] = r / contributors;
-            array[pixelIndex + 1] = g / contributors;
-            array[pixelIndex + 2] = b / contributors;
-            array[pixelIndex + 3] = a / contributors;
+            if (contributors === 0) {
+                array[pixelIndex] = 0;
+                array[pixelIndex + 1] = 0;
+                array[pixelIndex + 2] = 0;
+                array[pixelIndex + 3] = 255;
+            } else {
+                array[pixelIndex] = Math.floor(r / contributors);
+                array[pixelIndex + 1] = Math.floor(g / contributors);
+                array[pixelIndex + 2] = Math.floor(b / contributors);
+                array[pixelIndex + 3] = Math.floor(a / contributors);
+            }
         }
     }
 }

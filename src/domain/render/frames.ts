@@ -1,4 +1,5 @@
 import { rgbaToHex } from "./colors";
+import { formatFixed } from "../../helpers/fixed-point";
 
 export type frameProps = {
   uint8ClampedArray: Uint8ClampedArray;
@@ -15,7 +16,7 @@ export function iterationsToRectBodies(
   opacity: number,
 ): string[] {
   const step = cellSize + cellGap;
-  const inset = cellGap / 2;
+  const inset = Math.floor(cellGap / 2);
   return iterations.map((buf) => {
     let bodies = "";
     for (let y = 0; y < h; y++) {
@@ -35,12 +36,13 @@ export function iterationsToRectBodies(
 
         const px = x * step + inset;
         const py = y * step + inset;
+        const alpha = Math.floor((opacity * a) / 255);
 
         bodies += `\
-<rect x="${px}" y="${py}" width="${cellSize}" height="${cellSize}"
+<rect x="${formatFixed(px, 3)}" y="${formatFixed(py, 3)}" width="${formatFixed(cellSize, 3)}" height="${formatFixed(cellSize, 3)}"
       data-status="${status}"
       fill="${rgbaToHex(r, g, b, a)}"
-      opacity="${(opacity * (a / 255)).toFixed(3)}"/>\n`;
+      opacity="${formatFixed(alpha, 3)}"/>\n`;
       }
     }
     return bodies;
@@ -49,7 +51,7 @@ export function iterationsToRectBodies(
 
 export function collapseSVG(bodies: string[]): string {
   const frames = bodies.map((inner, i) => {
-    const begin = `${i / 10}s`;
+    const begin = `${formatFixed(i, 1)}s`;
     return `
 <g id="iteration-${i}" style="display:none; mix-blend-mode:overlay" filter="url(#wobble-${i})">
 ${inner}

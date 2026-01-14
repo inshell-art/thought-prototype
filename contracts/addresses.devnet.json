@@ -1,0 +1,11 @@
+{
+  "rpcUrl": "http://127.0.0.1:5050/rpc",
+  "seedGenerator": {
+    "classHash": "0x071f7f07ff3f4208b1788e3179faee4d10dbb1f53bf236da1f19d12f5c2500cd",
+    "address": "0x0319daabfacb7f24bb7a248c268cab5094977670a5d79de07ca28e906df72df2"
+  },
+  "thoughtPreviewer": {
+    "classHash": "0x68e73ad2100abb555a048ad396fc4c1ddfcf736f260f0ac03bd822c05977713",
+    "address": "0x037724571bdb501eec1d956e78b4343dace94c9cfe333a5dab620c456303ff22"
+  }
+}

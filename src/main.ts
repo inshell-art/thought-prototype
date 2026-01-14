@@ -1,6 +1,7 @@
 import { layoutSVG } from "./domain/render/layout-svg";
 import { charSrcPreview, outputPreview } from "./domain/render/preview";
-import { PRNG } from "./helpers/prng";
+import { mixSeed, PRNG32 } from "./helpers/prng";
+import { computeSeed32 } from "./helpers/seed";
 import AnalyzeForWFC from "./domain/sample/analyze-for-wfc";
 import type { ThoughtData } from "./domain/sample/analyze-for-wfc";
 import { DownloadSVG } from "./helpers/download-svg";
@@ -32,6 +33,9 @@ indexBox.value = storage.index;
 warningBox.textContent = "";
 
 const MAX_TEXT_LEN = 23;
+const SEED_TAG_SAMPLE = 0x53414d50;
+const SEED_TAG_WFC = 0x57464330;
+const SEED_TAG_VISUAL = 0x56495330;
 
 // save the svg as local file
 document.getElementById("btn-save-svg")!.addEventListener("click", () => DownloadSVG(storage.svg));
@@ -147,9 +151,8 @@ function triggerFromInput() {
 
   storage.thoughtStr = normalizedText;
   storage.length = storage.thoughtStr.length;
-  const seedKey = `${storage.account_address}:${storage.index}:${storage.thoughtStr}`;
-
-  const trnd = PRNG(seedKey);
+  const baseSeed = computeSeed32(storage.account_address, storage.index, storage.thoughtStr);
+  const trnd = PRNG32(mixSeed(baseSeed, SEED_TAG_SAMPLE));
   const thoughtData: ThoughtData = AnalyzeForWFC(storage.thoughtStr, trnd);
 
   render(thoughtData);
@@ -158,9 +161,9 @@ function triggerFromInput() {
 }
 
 function render(thoughtData: ThoughtData) {
-  const seedKey = `${storage.account_address}:${storage.index}:${storage.thoughtStr}`;
-  const wfcRnd = PRNG(seedKey);
-  const visualRnd = PRNG(`${seedKey}|visual`);
+  const baseSeed = computeSeed32(storage.account_address, storage.index, storage.thoughtStr);
+  const wfcRnd = PRNG32(mixSeed(baseSeed, SEED_TAG_WFC));
+  const visualRnd = PRNG32(mixSeed(baseSeed, SEED_TAG_VISUAL));
   const svg = layoutSVG(storage, thoughtData, wfcRnd, visualRnd);
   (document.getElementById("THOUGHT-canvas") as HTMLElement).innerHTML = svg;
   storage.svg = svg;

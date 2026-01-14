@@ -1,3 +1,6 @@
+import type { RNG32 } from "../../helpers/prng";
+import { rngByte } from "../../helpers/prng";
+
 const splitWords = (input: string): string[] => {
     const words: string[] = [];
     let i = 0;
@@ -44,14 +47,14 @@ const splitWords = (input: string): string[] => {
 
 const longest = (arr: string[]): number => arr.reduce((maxLength, word) => Math.max(maxLength, word.length), 0);
 
-const randomCol = (rnd: () => number): RGBA => {
-    const r = Math.floor(rnd() * 256);
-    const g = Math.floor(rnd() * 256);
-    const b = Math.floor(rnd() * 256);
+const randomCol = (rnd: RNG32): RGBA => {
+    const r = rngByte(rnd);
+    const g = rngByte(rnd);
+    const b = rngByte(rnd);
     return { r, g, b, a: 255 };
 }
 
-const AnalyzeForWFC = (thought: string, rnd: () => number): ThoughtData => {
+const AnalyzeForWFC = (thought: string, rnd: RNG32): ThoughtData => {
     const wordsRaw = splitWords(thought);
     const chars: CharData[] = [];
     const palette: RGBA[] = [];

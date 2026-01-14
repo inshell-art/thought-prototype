@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 contracts/target
+contracts/sncast_accounts.json
 
 # Editor directories and files
 .vscode/*

@@ -1,9 +1,17 @@
 import AnalyzeForWFC from "../src/domain/sample/analyze-for-wfc.ts";
 import { OverlappingModel } from "../src/domain/wfc/wfc-algorithm.ts";
 import { rectsToPixels } from "../src/domain/render/pixels.ts";
-import { PRNG } from "../src/helpers/prng.ts";
+import { PRNG32, mixSeed } from "../src/helpers/prng.ts";
+import { computeSeed32 } from "../src/helpers/seed.ts";
+import { isqrtRound } from "../src/helpers/fixed-point.ts";
+
+const MAX_TEXT_LEN = 23;
+const SEED_TAG_SAMPLE = 0x53414d50;
+const SEED_TAG_WFC = 0x57464330;
 
 const BASE_CANDIDATES = [
+  "h",
+  "hi",
   "hello hello hel",
   "hello hello hello",
   "abcd abcd abcd ab",
@@ -11,8 +19,12 @@ const BASE_CANDIDATES = [
   "abcd efgh ijkl mnop",
   "abc def ghi jkl mno",
   "thought look svg",
+  "abc\nxyz",
+  "a b c d e f",
+  "abc  def",
   "abcdefghijklmnop",
   "abcdefghijklmnopqrst",
+  "abcdefghijklmnopqrstuvw",
   "abacabadabacaba",
   "aaaaabbbbbccccc",
 ];
@@ -64,14 +76,32 @@ const randomText = (minLen: number, maxLen: number): string => {
   return out.trim().replace(/\s+/g, " ");
 };
 
-const gridSize = (text: string): number =>
-  text.length > 5
-    ? Math.round(5 + Math.sqrt(text.length - 5))
-    : text.length + 1;
+const normalizeInput = (text: string): string =>
+  text
+    .replace(/\t/g, " ")
+    .split("\n")
+    .map((line) => {
+      const noLeading = line.replace(/^ +/g, "");
+      const collapsed = noLeading.replace(/(\S) +(?=\S)/g, "$1 ");
+      return collapsed.replace(/ +$/g, "");
+    })
+    .join("\n");
 
-const runOnce = (text: string, tokenId: string) => {
-  const seedKey = tokenId + text;
-  const trnd = PRNG(seedKey);
+const sanitizeText = (text: string): string | null => {
+  const normalized = normalizeInput(text);
+  if (!normalized) return null;
+  if (normalized.length > MAX_TEXT_LEN) return null;
+  return normalized;
+};
+
+const gridSize = (text: string): number =>
+  text.length > 5 ? 5 + isqrtRound(text.length - 5) : text.length + 1;
+
+const accountAddress = (process.env.ACCOUNT_ADDRESS ?? "0").trim().toLowerCase();
+
+const runOnce = (text: string, index: string) => {
+  const baseSeed = computeSeed32(accountAddress, index, text);
+  const trnd = PRNG32(mixSeed(baseSeed, SEED_TAG_SAMPLE));
   const thought = AnalyzeForWFC(text, trnd);
 
   const n = gridSize(text);
@@ -90,28 +120,30 @@ const runOnce = (text: string, tokenId: string) => {
     8,
   );
 
-  const lrnd = PRNG(seedKey);
+  const lrnd = PRNG32(mixSeed(baseSeed, SEED_TAG_WFC));
   const ok = model.generate(lrnd);
   const blackHoleCell = model.getBlackHoleCell();
-  return { ok, blackHoleCell };
+  return { ok, blackHoleCell, baseSeed };
 };
 
 const main = () => {
   const candidates = buildCandidates();
   const seedsPerCandidate = 50;
 
-  for (const text of candidates) {
+  for (const rawText of candidates) {
+    const text = sanitizeText(rawText);
+    if (!text) continue;
     let contradictions = 0;
-    let exampleSeed = "";
+    let exampleIndex = "";
     let exampleCell: number | null = null;
 
     for (let i = 0; i < seedsPerCandidate; i += 1) {
-      const tokenId = String(i);
-      const result = runOnce(text, tokenId);
+      const index = String(i);
+      const result = runOnce(text, index);
       if (!result.ok) {
         contradictions += 1;
-        if (!exampleSeed) {
-          exampleSeed = tokenId;
+        if (!exampleIndex) {
+          exampleIndex = index;
           exampleCell = result.blackHoleCell;
         }
       }
@@ -120,10 +152,11 @@ const main = () => {
     if (contradictions > 0) {
       console.log("Contradiction found:");
       console.log(`  text: ${text}`);
+      console.log(`  account_address: ${accountAddress}`);
       console.log(`  seeds tested: ${seedsPerCandidate}`);
       console.log(`  contradiction count: ${contradictions}`);
-      if (exampleSeed) {
-        console.log(`  example token_id: ${exampleSeed}`);
+      if (exampleIndex) {
+        console.log(`  example index: ${exampleIndex}`);
       }
       if (exampleCell !== null) {
         console.log(`  example black hole cell: ${exampleCell}`);
@@ -134,13 +167,16 @@ const main = () => {
 
   const randomAttempts = 2000;
   for (let attempt = 0; attempt < randomAttempts; attempt += 1) {
-    const text = randomText(8, 32);
-    const tokenId = String(attempt);
-    const result = runOnce(text, tokenId);
+    const rawText = randomText(6, MAX_TEXT_LEN);
+    const text = sanitizeText(rawText);
+    if (!text) continue;
+    const index = String(attempt);
+    const result = runOnce(text, index);
     if (!result.ok) {
       console.log("Contradiction found in random search:");
       console.log(`  text: ${text}`);
-      console.log(`  example token_id: ${tokenId}`);
+      console.log(`  account_address: ${accountAddress}`);
+      console.log(`  example index: ${index}`);
       if (result.blackHoleCell !== null) {
         console.log(`  example black hole cell: ${result.blackHoleCell}`);
       }

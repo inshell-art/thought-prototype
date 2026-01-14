@@ -1,5 +1,6 @@
 import type { ThoughtData } from "../sample/analyze-for-wfc";
 import type { RGBA } from "../sample/analyze-for-wfc";
+import { isqrtRound } from "../../helpers/fixed-point";
 
 const rgbaToCss = ({ r, g, b, a }: RGBA): string =>
   `rgba(${r},${g},${b},${(a / 255).toFixed(2)})`;
@@ -152,7 +153,7 @@ const CANVAS = 10;           // match your layout-svg viewBox width/height
 const PADDING_FRAC = 0.10;   // 10% padding to match final render
 
 export function computeN(s: string) {
-  return s.length > 5 ? Math.round(5 + Math.sqrt(s.length - 5)) : s.length + 1;
+  return s.length > 5 ? 5 + isqrtRound(s.length - 5) : s.length + 1;
 }
 
 // Build a white-stroke n×n grid with the same padding math

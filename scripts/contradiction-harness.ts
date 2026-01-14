@@ -2,11 +2,19 @@ import fs from "node:fs";
 import AnalyzeForWFC from "../src/domain/sample/analyze-for-wfc.ts";
 import { OverlappingModel } from "../src/domain/wfc/wfc-algorithm.ts";
 import { rectsToPixels } from "../src/domain/render/pixels.ts";
-import { PRNG } from "../src/helpers/prng.ts";
+import { PRNG32, mixSeed } from "../src/helpers/prng.ts";
+import { computeSeed32 } from "../src/helpers/seed.ts";
+import { isqrtRound } from "../src/helpers/fixed-point.ts";
 
 const alphabet = "abcdefghijklmnopqrstuvwxyz";
 
+const MAX_TEXT_LEN = 23;
+const SEED_TAG_SAMPLE = 0x53414d50;
+const SEED_TAG_WFC = 0x57464330;
+
 const BASE_TEXTS = [
+  "h",
+  "hi",
   "hi this",
   "hello world",
   "thought look svg",
@@ -15,6 +23,12 @@ const BASE_TEXTS = [
   "hello hello hel",
   "abcd abcd abcd ab",
   "gysy go zb",
+  "a b c d e f",
+  "abc  def",
+  "abc\nxyz",
+  "a\nb\nc",
+  "abcdefghijklmnopqrstuvw",
+  "aaaaa bbbbb ccccc",
 ];
 
 const getArg = (name: string, fallback?: string) => {
@@ -26,11 +40,29 @@ const getArg = (name: string, fallback?: string) => {
 const count = Number.parseInt(getArg("--count", "5") ?? "5", 10);
 const tries = Number.parseInt(getArg("--tries", "200") ?? "200", 10);
 const outPath = getArg("--out", "");
+const accountAddress = (getArg("--account", "0") ?? "0").trim().toLowerCase();
+const indexStart = Number.parseInt(getArg("--index-start", "0") ?? "0", 10);
+
+const normalizeInput = (text: string): string =>
+  text
+    .replace(/\t/g, " ")
+    .split("\n")
+    .map((line) => {
+      const noLeading = line.replace(/^ +/g, "");
+      const collapsed = noLeading.replace(/(\S) +(?=\S)/g, "$1 ");
+      return collapsed.replace(/ +$/g, "");
+    })
+    .join("\n");
+
+const sanitizeText = (text: string): string | null => {
+  const normalized = normalizeInput(text);
+  if (!normalized) return null;
+  if (normalized.length > MAX_TEXT_LEN) return null;
+  return normalized;
+};
 
 const gridSize = (text: string): number =>
-  text.length > 5
-    ? Math.round(5 + Math.sqrt(text.length - 5))
-    : text.length + 1;
+  text.length > 5 ? 5 + isqrtRound(text.length - 5) : text.length + 1;
 
 const buildUniqueRun = (len: number): string => {
   let out = "";
@@ -77,9 +109,9 @@ const buildTexts = (): string[] => {
   return texts;
 };
 
-const runOnce = (text: string, tokenId: string) => {
-  const seedKey = tokenId + text;
-  const trnd = PRNG(seedKey);
+const runOnce = (text: string, index: string) => {
+  const baseSeed = computeSeed32(accountAddress, index, text);
+  const trnd = PRNG32(mixSeed(baseSeed, SEED_TAG_SAMPLE));
   const thought = AnalyzeForWFC(text, trnd);
 
   const n = gridSize(text);
@@ -98,31 +130,33 @@ const runOnce = (text: string, tokenId: string) => {
     8,
   );
 
-  const lrnd = PRNG(seedKey);
+  const lrnd = PRNG32(mixSeed(baseSeed, SEED_TAG_WFC));
   const ok = model.generate(lrnd);
-  return { ok, blackHoleCell: model.getBlackHoleCell(), seedKey };
+  return { ok, blackHoleCell: model.getBlackHoleCell(), baseSeed };
 };
 
 const findContradictions = () => {
   const results: Array<{
     text: string;
-    tokenId: string;
-    seedKey: string;
+    index: string;
+    baseSeed: number;
     gridSize: number;
     blackHoleCell: number | null;
   }> = [];
 
   const texts = buildTexts();
 
-  for (const text of texts) {
+  for (const textRaw of texts) {
+    const text = sanitizeText(textRaw);
+    if (!text) continue;
     for (let i = 0; i < tries && results.length < count; i += 1) {
-      const tokenId = String(i);
-      const result = runOnce(text, tokenId);
+      const index = String(indexStart + i);
+      const result = runOnce(text, index);
       if (!result.ok) {
         results.push({
           text,
-          tokenId,
-          seedKey: result.seedKey,
+          index,
+          baseSeed: result.baseSeed,
           gridSize: gridSize(text),
           blackHoleCell: result.blackHoleCell,
         });
@@ -133,14 +167,19 @@ const findContradictions = () => {
 
   let attempts = 0;
   while (results.length < count && attempts < tries * 10) {
-    const text = randomText(8, 32);
-    const tokenId = String(attempts);
-    const result = runOnce(text, tokenId);
+    const textRaw = randomText(6, MAX_TEXT_LEN);
+    const text = sanitizeText(textRaw);
+    if (!text) {
+      attempts += 1;
+      continue;
+    }
+    const index = String(indexStart + attempts);
+    const result = runOnce(text, index);
     if (!result.ok) {
       results.push({
         text,
-        tokenId,
-        seedKey: result.seedKey,
+        index,
+        baseSeed: result.baseSeed,
         gridSize: gridSize(text),
         blackHoleCell: result.blackHoleCell,
       });
@@ -155,11 +194,13 @@ const formatMarkdown = (items: ReturnType<typeof findContradictions>) => {
   const lines: string[] = [];
   lines.push("# Contradiction Harness Results");
   lines.push("");
-  lines.push("| Text | token_id | grid | black hole cell | seed key |");
-  lines.push("| --- | --- | --- | --- | --- |");
+  lines.push("| Text | account_address | index | grid | black hole cell | base seed |");
+  lines.push("| --- | --- | --- | --- | --- | --- |");
   for (const item of items) {
     const cell = item.blackHoleCell === null ? "-" : String(item.blackHoleCell);
-    lines.push(`| ${item.text} | ${item.tokenId} | ${item.gridSize} | ${cell} | ${item.seedKey} |`);
+    lines.push(
+      `| ${item.text} | ${accountAddress} | ${item.index} | ${item.gridSize} | ${cell} | ${item.baseSeed} |`,
+    );
   }
   lines.push("");
   return lines.join("\n");
@@ -175,8 +216,9 @@ const main = () => {
   console.log("Contradictions found:");
   for (const item of items) {
     console.log(`- text: ${item.text}`);
-    console.log(`  token_id: ${item.tokenId}`);
-    console.log(`  seed key: ${item.seedKey}`);
+    console.log(`  account_address: ${accountAddress}`);
+    console.log(`  index: ${item.index}`);
+    console.log(`  base seed: ${item.baseSeed}`);
     if (item.blackHoleCell !== null) {
       console.log(`  black hole cell: ${item.blackHoleCell}`);
     }
