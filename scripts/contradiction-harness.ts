@@ -27,6 +27,8 @@ const BASE_TEXTS = [
   "abc  def",
   "abc\nxyz",
   "a\nb\nc",
+  "a\nbb\na",
+  "a\nbbb\na",
   "abcdefghijklmnopqrstuvw",
   "aaaaa bbbbb ccccc",
 ];

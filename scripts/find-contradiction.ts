@@ -20,6 +20,10 @@ const BASE_CANDIDATES = [
   "abc def ghi jkl mno",
   "thought look svg",
   "abc\nxyz",
+  "a\nbb\na",
+  "a\nbbb\na",
+  "ab\nc",
+  "ab\ncc\nab",
   "a b c d e f",
   "abc  def",
   "abcdefghijklmnop",
@@ -128,7 +132,10 @@ const runOnce = (text: string, index: string) => {
 
 const main = () => {
   const candidates = buildCandidates();
-  const seedsPerCandidate = 50;
+  const seedsPerCandidate = Number.parseInt(
+    process.env.SEEDS_PER_CANDIDATE ?? "50",
+    10,
+  );
 
   for (const rawText of candidates) {
     const text = sanitizeText(rawText);
@@ -165,7 +172,10 @@ const main = () => {
     }
   }
 
-  const randomAttempts = 2000;
+  const randomAttempts = Number.parseInt(
+    process.env.RANDOM_ATTEMPTS ?? "2000",
+    10,
+  );
   for (let attempt = 0; attempt < randomAttempts; attempt += 1) {
     const rawText = randomText(6, MAX_TEXT_LEN);
     const text = sanitizeText(rawText);
