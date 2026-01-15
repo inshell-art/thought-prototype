@@ -128,6 +128,19 @@ Notes on Tick Cost Calibration
 - Use `preview_metrics()` to compare tick counts with actual Starknet step usage on devnet.
 - Adjust weights so `ticks_used` is roughly proportional to observed steps across text lengths.
 
+Calibration Results (devnet, RPC spec 0.9.0)
+- Used `starknet_simulateTransactions` (Invoke v3, SKIP_VALIDATE) to collect `l2_gas` and compared to `preview_metrics.ticks_used`.
+- Observed near-linear fit: `l2_gas ≈ 46,553 * ticks - 2,648,334` with R² ≈ 0.999.
+- Sample points (text → ticks_used → l2_gas):
+  - "h" → 173 → 9,011,200
+  - "hi" → 1,236 → 62,811,200
+  - "hi this" → 24,693 → 1,161,411,200
+  - "ab cd" → 28,350 → 1,308,291,200
+- RunResources limit observed for `"hi this is"` at `max_ticks >= 52,000` (revert); succeeds with `max_ticks = 50,000` (exhausted).
+- Recommendation:
+  - `DEFAULT_MAX_TICKS = 50,000` (safe on devnet for current contract)
+  - `SVG_CLOSEOUT_RESERVE_TICKS = 5,000` (kept)
+
 Fuel Exhaustion Behavior
 - If exhausted before WFC completes:
   - Stop further WFC iterations.
