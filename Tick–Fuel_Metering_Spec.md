@@ -1,0 +1,143 @@
+# Tick-Fuel Metering Spec (Contracts)
+
+Goal
+- Add a deterministic, explicit tick/fuel meter to the Cairo renderer so we can trace compute cost, cap work, and return a partial/diagnostic output instead of hitting Starknet step limits.
+- Preserve determinism: same inputs + same tick budget => same output and same ticks_used.
+
+Scope
+- Contracts only, specifically `contracts/src/lib.cairo` entrypoints:
+  - `ThoughtPreviewer.preview(account_address, index, text)`
+  - `SeedGenerator.get_seed(account_address, index, text)`
+- The SVG assembly is in-contract; the meter must cover both WFC compute and SVG output building.
+
+Non-Goals
+- No algorithm changes (WFC still N=2 overlapping model).
+- No UI changes or FE fallback logic.
+- No compression or refactoring of SVG content; meter is additive instrumentation.
+
+Definitions
+- Tick: unit of work used to approximate Starknet step usage.
+- Fuel (tick budget): max ticks allowed for a call.
+- Phase: coarse pipeline stage used to report where fuel was exhausted.
+
+High-Level Pipeline (current)
+1) truncate text (MAX_TEXT_LEN)
+2) compute seeds (sample, wfc, visual)
+3) build palette + sample
+4) build patterns + weights (skip blank patterns)
+5) build propagator
+6) WFC loop: observe + propagate until complete or contradiction
+7) build SVG: filters + per-iteration frames + title
+
+Proposed API Options
+- Option A (minimal change): add `preview_with_fuel(account_address, index, text, max_ticks)` returning:
+  - `svg: ByteArray`
+  - `ticks_used: u64`
+  - `status: u8` (0=ok, 1=exhausted, 2=contradiction)
+  - `phase: u8` (phase enum below)
+- Option B (diagnostic entrypoint): `preview_metrics(account_address, index, text, max_ticks)` returning:
+  - `ticks_used`, `phase`, `grid_size`, `pattern_count`, `frame_count`, `contradiction_cell?`
+  - No SVG payload (lower output size; used for profiling)
+- Option C (wrapper): keep `preview()` as a wrapper that calls `preview_with_fuel()` with a default budget.
+
+Phase Enumeration (example)
+0 = SeedAndNormalize
+1 = PaletteAndSample
+2 = PatternBuild
+3 = PropagatorBuild
+4 = WfcInit
+5 = WfcObserve
+6 = WfcPropagate
+7 = FrameRender
+8 = TitleRender
+9 = SvgFinalize
+
+Tick Accounting Design
+- Maintain a `TickState` passed by ref to key functions:
+  - `ticks_used: u64`
+  - `max_ticks: u64`
+  - `exhausted: bool`
+  - `phase: u8`
+- Use a helper:
+  - `tick(state, amount: u64) -> bool`
+  - increments `ticks_used` by `amount`
+  - if `ticks_used > max_ticks`: set `exhausted=true`, preserve `phase`, return false
+- On exhaustion:
+  - stop current loops as soon as possible
+  - return a valid SVG with an overlay label: "fuel exhausted" (or use `status` to let FE display error)
+
+Metering Points (per function)
+- truncate_text
+  - tick per byte: `+1` per copied byte
+- compute_seed_u128
+  - tick per byte: `+2` per hash step
+- split_words
+  - tick per byte: `+1`
+- build_char_color_map
+  - tick per character: `+2` (lookup + RNG color for new char)
+- build_char_grid
+  - tick per character placed: `+1`
+- build_palette_and_sample
+  - tick per output pixel (tile_px^2 per char): `+1` per pixel
+  - tick per palette insertion: `+5`
+- build_patterns
+  - outer loop per sample window: `+1`
+  - symmetry expansion: `+1` per symmetry (<=8)
+  - pattern insert/update: `+2`
+- build_propagator
+  - tick per adjacency test: `+1` (4 * P * P)
+- init_wfc_state
+  - tick per wave entry: `+1` (cells * P)
+  - tick per compat init: `+1` (cells * P * 4)
+- observe_wfc
+  - tick per cell scan: `+1`
+  - tick per weight sum: `+1` (cells * P)
+- propagate_wfc
+  - tick per stack pop: `+1`
+  - tick per neighbor candidate: `+1` (depends on propagator list length)
+- append_filter
+  - tick per filter: `+5`
+- append_frame_group (dominant)
+  - per cell: `+1`
+  - if generation incomplete, per contributing pattern: `+1` (N^2 * P per cell)
+  - per rect appended: `+2` (ByteArray writes)
+- append_title
+  - tick per title char: `+2`
+- svg finalize
+  - flat cost `+10`
+
+Notes on Tick Cost Calibration
+- Tick weights are placeholders; the spec requires a calibration pass.
+- Use `preview_metrics()` to compare tick counts with actual Starknet step usage on devnet.
+- Adjust weights so `ticks_used` is roughly proportional to observed steps across text lengths.
+
+Fuel Exhaustion Behavior
+- If exhausted before WFC completes:
+  - Stop further WFC iterations.
+  - Emit SVG with the frames computed so far, or a minimal placeholder.
+  - Add a visible label (or return `status=1` + `phase`) to signal truncation.
+- If exhausted during SVG assembly:
+  - Return a minimal SVG with an explicit "fuel exhausted" label.
+
+Determinism Requirements
+- If `max_ticks` is the same, output must be deterministic.
+- Exhaustion must happen at deterministic boundaries (tick checks must be in fixed order).
+
+Data Returned For Profiling
+- `ticks_used`
+- `phase` where exhaustion occurred
+- `grid_size`, `pattern_count`, `frame_count`
+- optional `contradiction_cell` if contradiction occurred before exhaustion
+
+Implementation Checklist (Cairo)
+1) Add TickState struct + tick() helper.
+2) Add new entrypoint `preview_with_fuel()` and (optional) `preview_metrics()`.
+3) Thread TickState through pipeline functions and add tick() calls at defined points.
+4) Add early-exit paths in loops when exhausted.
+5) Ensure all returns are valid ByteArray (even when exhausted).
+6) Add tests using small inputs to confirm deterministic ticks.
+
+Open Decisions
+- Exact tick weights (calibration required).
+- Whether to return partial SVG vs minimal error SVG on exhaustion.
+- Whether to expose debug-only entrypoints on mainnet.

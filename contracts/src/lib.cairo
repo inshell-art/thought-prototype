@@ -26,6 +26,52 @@ const LCG_C: u128 = 1013904223_u128;
 const SEED_TAG_SAMPLE: u32 = 0x53414d50_u32;
 const SEED_TAG_WFC: u32 = 0x57464330_u32;
 const SEED_TAG_VISUAL: u32 = 0x56495330_u32;
+const DEFAULT_MAX_TICKS: u64 = 1000000000_u64;
+
+const STATUS_OK: u8 = 0_u8;
+const STATUS_EXHAUSTED: u8 = 1_u8;
+const STATUS_CONTRADICTION: u8 = 2_u8;
+const NO_CONTRADICTION_CELL: u32 = 0xffffffff_u32;
+
+const PHASE_SEED: u8 = 0_u8;
+const PHASE_PALETTE: u8 = 1_u8;
+const PHASE_PATTERNS: u8 = 2_u8;
+const PHASE_PROPAGATOR: u8 = 3_u8;
+const PHASE_WFC_INIT: u8 = 4_u8;
+const PHASE_WFC_OBSERVE: u8 = 5_u8;
+const PHASE_WFC_PROPAGATE: u8 = 6_u8;
+const PHASE_FRAME_RENDER: u8 = 7_u8;
+const PHASE_TITLE_RENDER: u8 = 8_u8;
+const PHASE_SVG_FINALIZE: u8 = 9_u8;
+
+#[derive(Copy, Drop)]
+struct TickState {
+    ticks_used: u64,
+    max_ticks: u64,
+    exhausted: bool,
+    phase: u8,
+}
+
+fn tick_state_new(max_ticks: u64) -> TickState {
+    TickState { ticks_used: 0_u64, max_ticks, exhausted: false, phase: PHASE_SEED }
+}
+
+fn set_phase(ref state: TickState, phase: u8) {
+    state.phase = phase;
+}
+
+fn tick(ref state: TickState, amount: u64) -> bool {
+    if state.exhausted {
+        return false;
+    }
+    let next = state.ticks_used + amount;
+    state.ticks_used = next;
+    if next > state.max_ticks {
+        state.exhausted = true;
+        return false;
+    }
+    true
+}
 
 #[derive(Copy, Drop)]
 struct Color {
@@ -98,12 +144,15 @@ fn remap_fixed(min: u32, max: u32, ref rng: Rng) -> u32 {
     min + value_u32
 }
 
-fn truncate_text(text: @ByteArray, max_len: usize) -> ByteArray {
+fn truncate_text(text: @ByteArray, max_len: usize, ref state: TickState) -> ByteArray {
     let mut out: ByteArray = "";
     let len = text.len();
     let limit = if len > max_len { max_len } else { len };
     let mut i = 0;
     while i < limit {
+        if !tick(ref state, 1_u64) {
+            break;
+        }
         let byte = text.at(i).unwrap();
         out.append_byte(byte);
         i += 1;
@@ -135,6 +184,42 @@ fn compute_seed(account_address: ContractAddress, index: u64, text: @ByteArray) 
 
 fn compute_seed32(account_address: ContractAddress, index: u64, text: @ByteArray) -> u32 {
     let seed_u128 = compute_seed_u128(account_address, index, text);
+    let masked = mod_u128(seed_u128, U32_MOD);
+    masked.try_into().unwrap()
+}
+
+fn compute_seed_u128_with_ticks(
+    account_address: ContractAddress,
+    index: u64,
+    text: @ByteArray,
+    ref state: TickState,
+) -> u128 {
+    let account_felt: felt252 = account_address.into();
+    let account_u256: u256 = account_felt.into();
+    let mut seed: u128 = account_u256.low ^ account_u256.high;
+    let index_u128: u128 = index.into();
+    seed = mod_u128(seed + index_u128, RNG_MOD);
+    let len = text.len();
+    let mut i = 0;
+    while i < len {
+        if !tick(ref state, 2_u64) {
+            break;
+        }
+        let byte = text.at(i).unwrap();
+        let byte_u128: u128 = byte.into();
+        seed = mod_u128(seed * 131_u128 + byte_u128, RNG_MOD);
+        i += 1;
+    }
+    seed
+}
+
+fn compute_seed32_with_ticks(
+    account_address: ContractAddress,
+    index: u64,
+    text: @ByteArray,
+    ref state: TickState,
+) -> u32 {
+    let seed_u128 = compute_seed_u128_with_ticks(account_address, index, text, ref state);
     let masked = mod_u128(seed_u128, U32_MOD);
     masked.try_into().unwrap()
 }
@@ -275,12 +360,15 @@ fn decode_color_key(key: u32) -> Color {
     }
 }
 
-fn split_words(text: @ByteArray) -> Array<ByteArray> {
+fn split_words(text: @ByteArray, ref state: TickState) -> Array<ByteArray> {
     let mut words: Array<ByteArray> = ArrayTrait::new();
     let mut current: ByteArray = "";
     let len = text.len();
     let mut i = 0;
     while i < len {
+        if !tick(ref state, 1_u64) {
+            break;
+        }
         let byte = text.at(i).unwrap();
         if byte == 10_u8 {
             words.append(current);
@@ -291,6 +379,9 @@ fn split_words(text: @ByteArray) -> Array<ByteArray> {
         if byte == 32_u8 {
             let mut j = i;
             while j < len {
+                if !tick(ref state, 1_u64) {
+                    break;
+                }
                 let next = text.at(j).unwrap();
                 if next != 32_u8 {
                     break;
@@ -326,7 +417,11 @@ fn split_words(text: @ByteArray) -> Array<ByteArray> {
     words
 }
 
-fn build_char_color_map(words: @Array<ByteArray>, seed: u32) -> Felt252Dict<u32> {
+fn build_char_color_map(
+    words: @Array<ByteArray>,
+    seed: u32,
+    ref state: TickState,
+) -> Felt252Dict<u32> {
     let mut rng = rng_new(seed);
     let mut char_map: Felt252Dict<u32> = Default::default();
     let white_key = encode_color_key(WHITE_R, WHITE_G, WHITE_B, WHITE_A);
@@ -336,10 +431,16 @@ fn build_char_color_map(words: @Array<ByteArray>, seed: u32) -> Felt252Dict<u32>
     let word_count = words.len();
     let mut w = 0;
     while w < word_count {
+        if state.exhausted {
+            break;
+        }
         let word = words.get(w).unwrap();
         let word_len = word.len();
         let mut i = 0;
         while i < word_len {
+            if !tick(ref state, 2_u64) {
+                break;
+            }
             let byte = word.at(i).unwrap();
             let key: felt252 = byte.into();
             let existing = char_map.get(key);
@@ -364,15 +465,22 @@ fn build_char_color_map(words: @Array<ByteArray>, seed: u32) -> Felt252Dict<u32>
 fn build_char_grid(
     words: @Array<ByteArray>,
     word_max_len: usize,
+    ref state: TickState,
 ) -> Felt252Dict<u8> {
     let mut grid: Felt252Dict<u8> = Default::default();
     let word_count = words.len();
     let mut y = 0;
     while y < word_count {
+        if state.exhausted {
+            break;
+        }
         let word = words.get(y).unwrap();
         let word_len = word.len();
         let mut x = 0;
         while x < word_len {
+            if !tick(ref state, 1_u64) {
+                break;
+            }
             let byte = word.at(x).unwrap();
             let idx = y * word_max_len + x;
             let key: felt252 = idx.into();
@@ -388,6 +496,7 @@ fn build_char_grid(
 fn build_palette_and_sample(
     text: @ByteArray,
     seed: u32,
+    ref state: TickState,
 ) -> (
     Array<Color>,
     Array<u16>,
@@ -396,11 +505,14 @@ fn build_palette_and_sample(
     Option<u16>,
     Felt252Dict<u32>,
 ) {
-    let words = split_words(text);
+    let words = split_words(text, ref state);
     let mut word_max_len = 0;
     let word_count = words.len();
     let mut i = 0;
     while i < word_count {
+        if state.exhausted {
+            break;
+        }
         let word = words.get(i).unwrap();
         let len = word.len();
         if len > word_max_len {
@@ -409,8 +521,8 @@ fn build_palette_and_sample(
         i += 1;
     }
 
-    let mut char_colors = build_char_color_map(@words, seed);
-    let mut char_grid = build_char_grid(@words, word_max_len);
+    let mut char_colors = build_char_color_map(@words, seed, ref state);
+    let mut char_grid = build_char_grid(@words, word_max_len, ref state);
 
     let tile_px: usize = 2;
     let data_width = word_max_len * tile_px;
@@ -423,8 +535,14 @@ fn build_palette_and_sample(
 
     let mut y = 0;
     while y < data_height {
+        if state.exhausted {
+            break;
+        }
         let mut x = 0;
         while x < data_width {
+            if !tick(ref state, 1_u64) {
+                break;
+            }
             let char_x = x / tile_px;
             let char_y = y / tile_px;
             let idx = char_y * word_max_len + char_x;
@@ -446,6 +564,7 @@ fn build_palette_and_sample(
             let palette_key: felt252 = color_key_u32.into();
             let existing = palette_map.get(palette_key);
             let palette_index = if existing == 0 {
+                let _ = tick(ref state, 5_u64);
                 let color = decode_color_key(color_key_u32);
                 palette.append(color);
                 let index_u16: u16 = (palette.len() - 1).try_into().unwrap();
@@ -510,6 +629,7 @@ fn build_patterns(
     height: usize,
     palette_len: u16,
     blank_index: Option<u16>,
+    ref state: TickState,
 ) -> (Array<u16>, Felt252Dict<u16>, usize) {
     let mut patterns: Array<u16> = ArrayTrait::new();
     let mut pattern_map: Felt252Dict<u16> = Default::default();
@@ -522,8 +642,14 @@ fn build_patterns(
 
     let mut y = 0;
     while y < height {
+        if state.exhausted {
+            break;
+        }
         let mut x = 0;
         while x < width {
+            if !tick(ref state, 1_u64) {
+                break;
+            }
             let p0 = sample_at(sample, width, x % width, y % height);
             let p1 = sample_at(sample, width, (x + 1) % width, y % height);
             let p2 = sample_at(sample, width, x % width, (y + 1) % height);
@@ -544,6 +670,9 @@ fn build_patterns(
 
                 let mut k: u32 = 0_u32;
                 while k < 8_u32 {
+                    if !tick(ref state, 1_u64) {
+                        break;
+                    }
                     let (a, b, c, d) = match k {
                         0_u32 => r0,
                         1_u32 => r1,
@@ -557,6 +686,7 @@ fn build_patterns(
                     let key = encode_pattern(a, b, c, d, palette_len);
                     let existing = pattern_map.get(key);
                     if existing == 0 {
+                        let _ = tick(ref state, 2_u64);
                         if pattern_count < MAX_PATTERNS {
                             patterns.append(a);
                             patterns.append(b);
@@ -569,6 +699,7 @@ fn build_patterns(
                             weights.insert(weight_key, 1);
                         }
                     } else {
+                        let _ = tick(ref state, 2_u64);
                         let weight_key: felt252 = (existing - 1_u16).into();
                         let current = weights.get(weight_key);
                         weights.insert(weight_key, current + 1);
@@ -617,6 +748,7 @@ fn prop_index(dir: u32, t: usize, pattern_count: usize) -> usize {
 fn build_propagator(
     patterns: @Array<u16>,
     pattern_count: usize,
+    ref state: TickState,
 ) -> (Array<u32>, Array<u16>) {
     let mut starts: Array<u32> = ArrayTrait::new();
     let mut list: Array<u16> = ArrayTrait::new();
@@ -624,11 +756,20 @@ fn build_propagator(
 
     let mut dir: u32 = 0;
     while dir < 4_u32 {
+        if state.exhausted {
+            break;
+        }
         let mut t = 0;
         while t < pattern_count {
+            if state.exhausted {
+                break;
+            }
             starts.append(total);
             let mut t2 = 0;
             while t2 < pattern_count {
+                if !tick(ref state, 1_u64) {
+                    break;
+                }
                 if pattern_agrees(patterns, t, t2, dir.try_into().unwrap()) {
                     list.append(t2.try_into().unwrap());
                     total += 1_u32;
@@ -903,6 +1044,21 @@ fn append_byte(ref svg: ByteArray, value: u8) {
     svg.append(@s);
 }
 
+fn render_exhausted_svg(text: @ByteArray, phase: u8) -> ByteArray {
+    let mut svg: ByteArray = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" viewBox=\"0 0 10 10\">";
+    svg.append(@"<rect width=\"100%\" height=\"100%\" fill=\"#0a0a0a\"/>");
+    svg.append(@"<text x=\"1\" y=\"2\" font-family=\"monospace\" font-size=\"0.6\" fill=\"#ffffff\">fuel exhausted</text>");
+    svg.append(@"<text x=\"1\" y=\"3\" font-family=\"monospace\" font-size=\"0.4\" fill=\"#ffffff\">phase: ");
+    let phase_u32: u32 = phase.into();
+    append_number(ref svg, phase_u32);
+    svg.append(@"</text>");
+    svg.append(@"<text x=\"1\" y=\"4\" font-family=\"monospace\" font-size=\"0.4\" fill=\"#ffffff\">");
+    svg.append(text);
+    svg.append(@"</text>");
+    svg.append(@"</svg>");
+    svg
+}
+
 fn svg_from_grid(
     palette: @Array<Color>,
     grid: @Array<u16>,
@@ -1040,15 +1196,25 @@ fn init_wfc_state(
     ref wave: Felt252Dict<u8>,
     ref counts: Felt252Dict<u16>,
     ref compatible: Felt252Dict<u16>,
+    ref state: TickState,
 ) {
     let cells = grid_size * grid_size;
     let mut cell = 0;
     while cell < cells {
+        if state.exhausted {
+            break;
+        }
         let mut t = 0;
         while t < pattern_count {
+            if !tick(ref state, 1_u64) {
+                break;
+            }
             wave.insert(wave_key(cell, t, pattern_count), 1_u8);
             let mut d = 0_u32;
             while d < 4_u32 {
+                if !tick(ref state, 1_u64) {
+                    break;
+                }
                 let opp = opposite_dir(d);
                 let len = prop_len(starts, opp, t, pattern_count);
                 compatible.insert(compat_key(cell, t, d, pattern_count), len);
@@ -1106,6 +1272,7 @@ fn observe_wfc(
     pattern_count: usize,
     grid_size: usize,
     ref rng: Rng,
+    ref state: TickState,
     ref wave: Felt252Dict<u8>,
     ref counts: Felt252Dict<u16>,
     ref compatible: Felt252Dict<u16>,
@@ -1119,6 +1286,9 @@ fn observe_wfc(
     let mut argmin: Option<usize> = Option::None;
     let mut i = 0;
     while i < cells {
+        if !tick(ref state, 1_u64) {
+            return Option::Some(false);
+        }
         let count = counts.get(count_key(i));
         if count == 0 {
             if contradiction_cell.is_none() {
@@ -1151,6 +1321,9 @@ fn observe_wfc(
     let mut sum_weights: u32 = 0_u32;
     let mut t = 0;
     while t < pattern_count {
+        if !tick(ref state, 1_u64) {
+            return Option::Some(false);
+        }
         let key = wave_key(cell_index, t, pattern_count);
         if wave.get(key) == 1_u8 {
             sum_weights += get_weight(ref weights, t);
@@ -1204,6 +1377,7 @@ fn propagate_wfc(
     grid_size: usize,
     starts: @Array<u32>,
     list: @Array<u16>,
+    ref state: TickState,
     ref wave: Felt252Dict<u8>,
     ref counts: Felt252Dict<u16>,
     ref compatible: Felt252Dict<u16>,
@@ -1219,6 +1393,9 @@ fn propagate_wfc(
                 break;
             },
             Option::Some((cell_a, pattern_a)) => {
+                if !tick(ref state, 1_u64) {
+                    return;
+                }
                 let x = cell_a % grid_size;
                 let y = cell_a / grid_size;
                 let mut dir: u32 = 0_u32;
@@ -1235,6 +1412,9 @@ fn propagate_wfc(
                     let end = *starts.get(pidx + 1).unwrap().deref();
                     let mut idx = start;
                     while idx < end {
+                        if !tick(ref state, 1_u64) {
+                            return;
+                        }
                         let list_index: usize = idx.try_into().unwrap();
                         let t2 = *list.get(list_index).unwrap().deref();
                         let t2_usize: usize = t2.into();
@@ -1267,7 +1447,17 @@ fn propagate_wfc(
     }
 }
 
-fn append_filter(ref defs: ByteArray, index: usize, freq: u32, scale: u32, seed: u32) {
+fn append_filter(
+    ref defs: ByteArray,
+    index: usize,
+    freq: u32,
+    scale: u32,
+    seed: u32,
+    ref state: TickState,
+) {
+    if !tick(ref state, 5_u64) {
+        return;
+    }
     defs.append(@"
     <filter id=\"wobble-");
     append_number(ref defs, index.try_into().unwrap());
@@ -1300,6 +1490,7 @@ fn append_frame_group(
     ref wave: Felt252Dict<u8>,
     ref counts: Felt252Dict<u16>,
     generation_complete: bool,
+    ref state: TickState,
 ) {
     let step = cell_size + cell_gap;
     let inset = cell_gap / 2_u32;
@@ -1313,8 +1504,14 @@ fn append_frame_group(
 
     let mut y = 0;
     while y < grid_size {
+        if state.exhausted {
+            break;
+        }
         let mut x = 0;
         while x < grid_size {
+            if !tick(ref state, 1_u64) {
+                break;
+            }
             let cell = y * grid_size + x;
             let count = counts.get(count_key(cell));
             let status_is_collapsed = count == 1_u16;
@@ -1352,8 +1549,12 @@ fn append_frame_group(
                         let source = sx + sy * grid_size;
                         let mut t = 0;
                         while t < pattern_count {
+                            if state.exhausted {
+                                break;
+                            }
                             let key = wave_key(source, t, pattern_count);
                             if wave.get(key) == 1_u8 {
+                                let _ = tick(ref state, 1_u64);
                                 contributors += 1_u32;
                                 let color_index = pattern_at(patterns, t, dx + dy * N);
                                 let color = *palette.get(color_index.into()).unwrap().deref();
@@ -1385,6 +1586,7 @@ fn append_frame_group(
             let px = step * (x.try_into().unwrap()) + inset;
             let py = step * (y.try_into().unwrap()) + inset;
 
+            let _ = tick(ref state, 2_u64);
             frames.append(@"
 <rect x=\"");
             append_fixed(ref frames, px, 3_u32);
@@ -1429,6 +1631,7 @@ fn append_title(
     title_y: u32,
     title_width: u32,
     title_height: u32,
+    ref state: TickState,
 ) {
     let mut title_chars: Array<u8> = ArrayTrait::new();
     let len = text.len();
@@ -1482,6 +1685,9 @@ fn append_title(
         if ch == 32_u8 {
             idx += 1;
             continue;
+        }
+        if !tick(ref state, 2_u64) {
+            break;
         }
         let key: felt252 = ch.into();
         let color_key = char_colors.get(key);
@@ -1552,7 +1758,12 @@ fn render_svg(
     visual_seed: u32,
     text: @ByteArray,
     ref char_colors: Felt252Dict<u32>,
+    ref state: TickState,
+    ref frame_count_out: u32,
+    ref contradiction_cell_out: u32,
 ) -> ByteArray {
+    frame_count_out = 0_u32;
+    contradiction_cell_out = NO_CONTRADICTION_CELL;
     let canvas: u32 = 10_u32;
     let gap_frac_fp: u32 = 0_u32;
     let padding_frac_fp: u32 = 100_u32;
@@ -1595,9 +1806,21 @@ fn render_svg(
     let mut black_hole_frame: Option<usize> = Option::None;
     let mut frame_count: usize = 0;
 
+    if state.exhausted {
+        return render_exhausted_svg(text, state.phase);
+    }
+
     if pattern_count == 0 {
+        set_phase(ref state, PHASE_FRAME_RENDER);
         let seed = rng_next_usize(ref visual_rng, 1001);
-        append_filter(ref filter_stack, 0, filter_freq, filter_scale, seed.try_into().unwrap());
+        append_filter(
+            ref filter_stack,
+            0,
+            filter_freq,
+            filter_scale,
+            seed.try_into().unwrap(),
+            ref state,
+        );
         // Render a single empty frame
         let mut dummy_wave: Felt252Dict<u8> = Default::default();
         let mut dummy_counts: Felt252Dict<u16> = Default::default();
@@ -1620,16 +1843,33 @@ fn render_svg(
             ref dummy_wave,
             ref dummy_counts,
             false,
+            ref state,
         );
         contradiction_cell = if cells > 0 { Option::Some(0) } else { Option::None };
         black_hole_frame = if cells > 0 { Option::Some(0) } else { Option::None };
         frame_count = 1;
     } else {
-        let (starts, list) = build_propagator(patterns, pattern_count);
+        set_phase(ref state, PHASE_PROPAGATOR);
+        let (starts, list) = build_propagator(patterns, pattern_count, ref state);
+        if state.exhausted {
+            return render_exhausted_svg(text, state.phase);
+        }
         let mut wave: Felt252Dict<u8> = Default::default();
         let mut counts: Felt252Dict<u16> = Default::default();
         let mut compatible: Felt252Dict<u16> = Default::default();
-        init_wfc_state(pattern_count, grid_size, @starts, ref wave, ref counts, ref compatible);
+        set_phase(ref state, PHASE_WFC_INIT);
+        init_wfc_state(
+            pattern_count,
+            grid_size,
+            @starts,
+            ref wave,
+            ref counts,
+            ref compatible,
+            ref state,
+        );
+        if state.exhausted {
+            return render_exhausted_svg(text, state.phase);
+        }
 
         let mut stack_cells: Felt252Dict<u32> = Default::default();
         let mut stack_patterns: Felt252Dict<u32> = Default::default();
@@ -1639,11 +1879,13 @@ fn render_svg(
         let mut frame_index: usize = 0;
 
         loop {
+            set_phase(ref state, PHASE_WFC_OBSERVE);
             let observe_result = observe_wfc(
                 ref weights,
                 pattern_count,
                 grid_size,
                 ref rng,
+                ref state,
                 ref wave,
                 ref counts,
                 ref compatible,
@@ -1652,13 +1894,18 @@ fn render_svg(
                 ref stack_size,
                 ref contradiction_cell,
             );
+            if state.exhausted {
+                return render_exhausted_svg(text, state.phase);
+            }
             match observe_result {
                 Option::None => {
+                    set_phase(ref state, PHASE_WFC_PROPAGATE);
                     propagate_wfc(
                         pattern_count,
                         grid_size,
                         @starts,
                         @list,
+                        ref state,
                         ref wave,
                         ref counts,
                         ref compatible,
@@ -1670,14 +1917,19 @@ fn render_svg(
                 },
                 Option::Some(_) => {},
             }
+            if state.exhausted {
+                return render_exhausted_svg(text, state.phase);
+            }
 
             let seed = rng_next_usize(ref visual_rng, 1001);
+            set_phase(ref state, PHASE_FRAME_RENDER);
             append_filter(
                 ref filter_stack,
                 frame_index,
                 filter_freq,
                 filter_scale,
                 seed.try_into().unwrap(),
+                ref state,
             );
 
             let generation_complete = match observe_result {
@@ -1697,7 +1949,11 @@ fn render_svg(
                 ref wave,
                 ref counts,
                 generation_complete,
+                ref state,
             );
+            if state.exhausted {
+                return render_exhausted_svg(text, state.phase);
+            }
 
             if black_hole_frame.is_none() && contradiction_cell.is_some() {
                 black_hole_frame = Option::Some(frame_index);
@@ -1797,6 +2053,11 @@ fn render_svg(
         </g>
     </g>");
 
+    if state.exhausted {
+        return render_exhausted_svg(text, state.phase);
+    }
+
+    set_phase(ref state, PHASE_TITLE_RENDER);
     append_title(
         ref svg,
         text,
@@ -1805,12 +2066,19 @@ fn render_svg(
         title_y,
         title_width,
         title_height,
+        ref state,
     );
 
+    set_phase(ref state, PHASE_SVG_FINALIZE);
+    let _ = tick(ref state, 10_u64);
     svg.append(@"
 
 </svg>");
 
+    frame_count_out = frame_count.try_into().unwrap();
+    if let Option::Some(cell) = contradiction_cell {
+        contradiction_cell_out = cell.try_into().unwrap();
+    }
     svg
 }
 
@@ -1832,6 +2100,20 @@ trait IThoughtPreviewer<TContractState> {
         index: u64,
         text: ByteArray,
     ) -> ByteArray;
+    fn preview_with_fuel(
+        self: @TContractState,
+        account_address: ContractAddress,
+        index: u64,
+        text: ByteArray,
+        max_ticks: u64,
+    ) -> (ByteArray, u64, u8, u8);
+    fn preview_metrics(
+        self: @TContractState,
+        account_address: ContractAddress,
+        index: u64,
+        text: ByteArray,
+        max_ticks: u64,
+    ) -> (u64, u8, u32, u32, u32, u32, u8);
 }
 
 #[starknet::contract]
@@ -1857,9 +2139,11 @@ mod SeedGenerator {
 #[starknet::contract]
 mod ThoughtPreviewer {
     use super::{
-        build_palette_and_sample, build_patterns, compute_n, compute_seed32, mix_seed,
-        render_svg, ContractAddress, IThoughtPreviewer, ByteArray, MAX_TEXT_LEN, SEED_TAG_SAMPLE,
-        SEED_TAG_VISUAL, SEED_TAG_WFC, truncate_text,
+        build_palette_and_sample, build_patterns, compute_n, compute_seed32_with_ticks, mix_seed,
+        render_exhausted_svg, render_svg, set_phase, tick_state_new, ByteArray, ContractAddress,
+        IThoughtPreviewer, MAX_TEXT_LEN, NO_CONTRADICTION_CELL, PHASE_PALETTE, PHASE_PATTERNS,
+        PHASE_SEED, STATUS_CONTRADICTION, STATUS_EXHAUSTED, STATUS_OK, DEFAULT_MAX_TICKS,
+        SEED_TAG_SAMPLE, SEED_TAG_VISUAL, SEED_TAG_WFC, truncate_text,
     };
 
     #[storage]
@@ -1873,28 +2157,164 @@ mod ThoughtPreviewer {
             index: u64,
             text: ByteArray,
         ) -> ByteArray {
-            let trimmed = truncate_text(@text, MAX_TEXT_LEN);
-            let grid_size = compute_n(trimmed.len());
-            let base_seed = compute_seed32(account_address, index, @trimmed);
-            let sample_seed = mix_seed(base_seed, SEED_TAG_SAMPLE);
-            let wfc_seed = mix_seed(base_seed, SEED_TAG_WFC);
-            let visual_seed = mix_seed(base_seed, SEED_TAG_VISUAL);
-            let (palette, sample, width, height, blank_index, mut char_colors) =
-                build_palette_and_sample(@trimmed, sample_seed);
-            let palette_len: u16 = palette.len().try_into().unwrap();
-            let (patterns, mut weights, pattern_count) =
-                build_patterns(@sample, width, height, palette_len, blank_index);
-            render_svg(
-                @palette,
-                @patterns,
-                ref weights,
-                pattern_count,
+            let (svg, _, _, _, _, _, _, _) = preview_core(
+                account_address,
+                index,
+                text,
+                DEFAULT_MAX_TICKS,
+            );
+            svg
+        }
+
+        fn preview_with_fuel(
+            self: @ContractState,
+            account_address: ContractAddress,
+            index: u64,
+            text: ByteArray,
+            max_ticks: u64,
+        ) -> (ByteArray, u64, u8, u8) {
+            let (svg, ticks_used, status, phase, _, _, _, _) = preview_core(
+                account_address,
+                index,
+                text,
+                max_ticks,
+            );
+            (svg, ticks_used, status, phase)
+        }
+
+        fn preview_metrics(
+            self: @ContractState,
+            account_address: ContractAddress,
+            index: u64,
+            text: ByteArray,
+            max_ticks: u64,
+        ) -> (u64, u8, u32, u32, u32, u32, u8) {
+            let (_, ticks_used, status, phase, grid_size, pattern_count, frame_count, contradiction_cell) =
+                preview_core(account_address, index, text, max_ticks);
+            (
+                ticks_used,
+                phase,
                 grid_size,
-                wfc_seed,
-                visual_seed,
-                @trimmed,
-                ref char_colors,
+                pattern_count,
+                frame_count,
+                contradiction_cell,
+                status,
             )
         }
+    }
+
+    fn preview_core(
+        account_address: ContractAddress,
+        index: u64,
+        text: ByteArray,
+        max_ticks: u64,
+    ) -> (ByteArray, u64, u8, u8, u32, u32, u32, u32) {
+        let mut state = tick_state_new(max_ticks);
+        set_phase(ref state, PHASE_SEED);
+        let trimmed = truncate_text(@text, MAX_TEXT_LEN, ref state);
+        let grid_size = compute_n(trimmed.len());
+        if state.exhausted {
+            let svg = render_exhausted_svg(@trimmed, state.phase);
+            return (
+                svg,
+                state.ticks_used,
+                STATUS_EXHAUSTED,
+                state.phase,
+                grid_size.try_into().unwrap(),
+                0_u32,
+                0_u32,
+                NO_CONTRADICTION_CELL,
+            );
+        }
+
+        let base_seed = compute_seed32_with_ticks(account_address, index, @trimmed, ref state);
+        let sample_seed = mix_seed(base_seed, SEED_TAG_SAMPLE);
+        let wfc_seed = mix_seed(base_seed, SEED_TAG_WFC);
+        let visual_seed = mix_seed(base_seed, SEED_TAG_VISUAL);
+
+        if state.exhausted {
+            let svg = render_exhausted_svg(@trimmed, state.phase);
+            return (
+                svg,
+                state.ticks_used,
+                STATUS_EXHAUSTED,
+                state.phase,
+                grid_size.try_into().unwrap(),
+                0_u32,
+                0_u32,
+                NO_CONTRADICTION_CELL,
+            );
+        }
+
+        set_phase(ref state, PHASE_PALETTE);
+        let (palette, sample, width, height, blank_index, mut char_colors) =
+            build_palette_and_sample(@trimmed, sample_seed, ref state);
+        if state.exhausted {
+            let svg = render_exhausted_svg(@trimmed, state.phase);
+            return (
+                svg,
+                state.ticks_used,
+                STATUS_EXHAUSTED,
+                state.phase,
+                grid_size.try_into().unwrap(),
+                0_u32,
+                0_u32,
+                NO_CONTRADICTION_CELL,
+            );
+        }
+
+        set_phase(ref state, PHASE_PATTERNS);
+        let palette_len: u16 = palette.len().try_into().unwrap();
+        let (patterns, mut weights, pattern_count) =
+            build_patterns(@sample, width, height, palette_len, blank_index, ref state);
+        if state.exhausted {
+            let svg = render_exhausted_svg(@trimmed, state.phase);
+            return (
+                svg,
+                state.ticks_used,
+                STATUS_EXHAUSTED,
+                state.phase,
+                grid_size.try_into().unwrap(),
+                pattern_count.try_into().unwrap(),
+                0_u32,
+                NO_CONTRADICTION_CELL,
+            );
+        }
+
+        let mut frame_count_out: u32 = 0_u32;
+        let mut contradiction_cell_out: u32 = NO_CONTRADICTION_CELL;
+        let svg = render_svg(
+            @palette,
+            @patterns,
+            ref weights,
+            pattern_count,
+            grid_size,
+            wfc_seed,
+            visual_seed,
+            @trimmed,
+            ref char_colors,
+            ref state,
+            ref frame_count_out,
+            ref contradiction_cell_out,
+        );
+
+        let status = if state.exhausted {
+            STATUS_EXHAUSTED
+        } else if contradiction_cell_out != NO_CONTRADICTION_CELL {
+            STATUS_CONTRADICTION
+        } else {
+            STATUS_OK
+        };
+
+        (
+            svg,
+            state.ticks_used,
+            status,
+            state.phase,
+            grid_size.try_into().unwrap(),
+            pattern_count.try_into().unwrap(),
+            frame_count_out,
+            contradiction_cell_out,
+        )
     }
 }
