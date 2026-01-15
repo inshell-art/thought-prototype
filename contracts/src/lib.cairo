@@ -32,6 +32,7 @@ const STATUS_OK: u8 = 0_u8;
 const STATUS_EXHAUSTED: u8 = 1_u8;
 const STATUS_CONTRADICTION: u8 = 2_u8;
 const NO_CONTRADICTION_CELL: u32 = 0xffffffff_u32;
+const SVG_CLOSEOUT_RESERVE_TICKS: u64 = 5000_u64;
 
 const PHASE_SEED: u8 = 0_u8;
 const PHASE_PALETTE: u8 = 1_u8;
@@ -67,6 +68,23 @@ fn tick(ref state: TickState, amount: u64) -> bool {
     let next = state.ticks_used + amount;
     state.ticks_used = next;
     if next > state.max_ticks {
+        state.exhausted = true;
+        return false;
+    }
+    true
+}
+
+fn ticks_remaining(ref state: TickState) -> u64 {
+    if state.ticks_used >= state.max_ticks {
+        0_u64
+    } else {
+        state.max_ticks - state.ticks_used
+    }
+}
+
+fn ensure_budget(ref state: TickState, needed: u64) -> bool {
+    let remaining = ticks_remaining(ref state);
+    if remaining <= needed {
         state.exhausted = true;
         return false;
     }
@@ -1748,6 +1766,17 @@ fn append_title(
 </g>");
 }
 
+fn estimate_frame_cost(grid_size: usize, pattern_count: usize, generation_complete: bool) -> u64 {
+    let cells: u64 = (grid_size * grid_size).try_into().unwrap();
+    if cells == 0_u64 {
+        return 0_u64;
+    }
+    let per_cell_complete: u64 = 3_u64;
+    let per_cell_incomplete: u64 = 3_u64 + (N * N * pattern_count).try_into().unwrap();
+    let per_cell = if generation_complete { per_cell_complete } else { per_cell_incomplete };
+    cells * per_cell
+}
+
 fn render_svg(
     palette: @Array<Color>,
     patterns: @Array<u16>,
@@ -1799,6 +1828,8 @@ fn render_svg(
     let title_x = padding;
     let title_y = height_fp - title_bottom_offset - title_height;
     let title_width = inner;
+    let reserve = SVG_CLOSEOUT_RESERVE_TICKS;
+    let cells_u64: u64 = (grid_size * grid_size).try_into().unwrap();
 
     let mut frame_stack: ByteArray = "";
     let mut filter_stack: ByteArray = "";
@@ -1809,9 +1840,16 @@ fn render_svg(
     if state.exhausted {
         return render_exhausted_svg(text, state.phase);
     }
+    if !ensure_budget(ref state, reserve) {
+        return render_exhausted_svg(text, state.phase);
+    }
 
     if pattern_count == 0 {
         set_phase(ref state, PHASE_FRAME_RENDER);
+        let frame_cost = estimate_frame_cost(grid_size, pattern_count, false) + 5_u64;
+        if !ensure_budget(ref state, reserve + frame_cost) {
+            return render_exhausted_svg(text, state.phase);
+        }
         let seed = rng_next_usize(ref visual_rng, 1001);
         append_filter(
             ref filter_stack,
@@ -1850,6 +1888,11 @@ fn render_svg(
         frame_count = 1;
     } else {
         set_phase(ref state, PHASE_PROPAGATOR);
+        let p_u64: u64 = pattern_count.try_into().unwrap();
+        let propagator_cost = 4_u64 * p_u64 * p_u64;
+        if !ensure_budget(ref state, reserve + propagator_cost) {
+            return render_exhausted_svg(text, state.phase);
+        }
         let (starts, list) = build_propagator(patterns, pattern_count, ref state);
         if state.exhausted {
             return render_exhausted_svg(text, state.phase);
@@ -1858,6 +1901,10 @@ fn render_svg(
         let mut counts: Felt252Dict<u16> = Default::default();
         let mut compatible: Felt252Dict<u16> = Default::default();
         set_phase(ref state, PHASE_WFC_INIT);
+        let init_cost = cells_u64 * p_u64 * 5_u64;
+        if !ensure_budget(ref state, reserve + init_cost) {
+            return render_exhausted_svg(text, state.phase);
+        }
         init_wfc_state(
             pattern_count,
             grid_size,
@@ -1923,6 +1970,14 @@ fn render_svg(
 
             let seed = rng_next_usize(ref visual_rng, 1001);
             set_phase(ref state, PHASE_FRAME_RENDER);
+            let generation_complete = match observe_result {
+                Option::Some(true) => true,
+                _ => false,
+            };
+            let frame_cost = estimate_frame_cost(grid_size, pattern_count, generation_complete) + 5_u64;
+            if !ensure_budget(ref state, reserve + frame_cost) {
+                return render_exhausted_svg(text, state.phase);
+            }
             append_filter(
                 ref filter_stack,
                 frame_index,
@@ -1932,10 +1987,6 @@ fn render_svg(
                 ref state,
             );
 
-            let generation_complete = match observe_result {
-                Option::Some(true) => true,
-                _ => false,
-            };
             append_frame_group(
                 ref frame_stack,
                 frame_index,

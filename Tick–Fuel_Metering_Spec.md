@@ -66,6 +66,16 @@ Tick Accounting Design
   - stop current loops as soon as possible
   - return a valid SVG with an overlay label: "fuel exhausted" (or use `status` to let FE display error)
 
+Close-Out Reserve And Guardrails
+- Reserve a fixed budget for SVG closure: `SVG_CLOSEOUT_RESERVE_TICKS`.
+  - If `remaining < reserve`, abort early and return a minimal exhausted SVG.
+  - This prevents half-written SVGs and avoids RPC revert near the step limit.
+- Pre-flight checks before heavy stages:
+  - Before propagator build: require `remaining >= reserve + (4 * P^2)` (or conservative bound).
+  - Before WFC init: require `remaining >= reserve + (cells * P * 5)` (approx).
+  - Before each frame: require `remaining >= reserve + frame_cost` (see estimate below).
+- Keep these checks deterministic and ordered so the same input + budget yields the same stop point.
+
 Metering Points (per function)
 - truncate_text
   - tick per byte: `+1` per copied byte
@@ -105,6 +115,13 @@ Metering Points (per function)
   - tick per title char: `+2`
 - svg finalize
   - flat cost `+10`
+
+Frame Cost Estimate (for guardrails)
+- `cell_count = grid_size * grid_size`
+- `per_cell_complete = 3` (cell tick + rect write ticks)
+- `per_cell_incomplete = 3 + (N^2 * P)`
+- `frame_cost = cell_count * per_cell_complete` if generation complete
+- `frame_cost = cell_count * per_cell_incomplete` if not complete
 
 Notes on Tick Cost Calibration
 - Tick weights are placeholders; the spec requires a calibration pass.
