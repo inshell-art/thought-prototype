@@ -136,9 +136,12 @@ Calibration Results (devnet, RPC spec 0.9.0)
   - "hi" → 1,236 → 62,811,200
   - "hi this" → 24,693 → 1,161,411,200
   - "ab cd" → 28,350 → 1,308,291,200
-- RunResources limit observed for `"hi this is"` at `max_ticks >= 52,000` (revert); succeeds with `max_ticks = 50,000` (exhausted).
+- RunResources limit observed for some short inputs:
+  - `"thn qj"` reverts at `max_ticks >= 35,000`, succeeds at `30,000`.
+  - `"upxffhwo"` reverts at `max_ticks >= 45,000`, succeeds at `40,000`.
+- Random sampling (20 texts, len<=23) with `max_ticks = 30,000` produced no RPC reverts; many cases exhaust as expected.
 - Recommendation:
-  - `DEFAULT_MAX_TICKS = 50,000` (safe on devnet for current contract)
+  - `DEFAULT_MAX_TICKS = 30,000` (safe across tested inputs; avoids RunResources reverts)
   - `SVG_CLOSEOUT_RESERVE_TICKS = 5,000` (kept)
 
 Fuel Exhaustion Behavior
