@@ -76,19 +76,29 @@ Tick Weights (current final values)
 
 Calibration Approach (devnet)
 - Used preview_metrics for ticks_used and starknet_simulateTransactions (invoke v3, SKIP_VALIDATE) for l2_gas.
-- Observed near-linear fit: l2_gas ~= 46,553 * ticks - 2,648,334 (R^2 ~= 0.999).
-- This validates tick weights as a stable proxy.
+- Fits computed on status=0 (non-exhausted) samples only.
+- max_ticks=30,000 (40 texts): l2_gas ~= 43,935.1 * ticks + 8,894,586.3 (R^2=0.9893); 0 reverts.
+- max_ticks=30,000 (200 texts): l2_gas ~= 42,703.7 * ticks + 21,510,370.0 (R^2=0.9857); 0 reverts.
+- max_ticks=32,000 (200 texts): l2_gas ~= 42,374.5 * ticks + 23,624,777.9 (R^2=0.9858); 0 reverts.
+- max_ticks=34,000 (200 texts): l2_gas ~= 42,374.5 * ticks + 23,624,777.9 (R^2=0.9858); 0 reverts.
+- max_ticks=35,000 (200 texts): l2_gas ~= 42,345.9 * ticks + 23,824,935.3 (R^2=0.9870); 1 RunResources revert.
+- max_ticks=36,000 (200 texts): l2_gas ~= 42,345.9 * ticks + 23,824,935.3 (R^2=0.9870); 2 RunResources reverts.
+- max_ticks=38,000 (200 texts): l2_gas ~= 42,345.9 * ticks + 23,824,935.3 (R^2=0.9870); 5 RunResources reverts.
+- max_ticks=40,000 (40 texts): l2_gas ~= 43,048.5 * ticks + 14,046,719.5 (R^2=0.9880); 2 RunResources reverts.
+- max_ticks=40,000 (200 texts): l2_gas ~= 42,345.9 * ticks + 23,824,935.3 (R^2=0.9870); 8 RunResources reverts.
+- This validates tick weights as a stable proxy within a devnet-configured budget.
 
 Budget Decision (devnet)
-- Some short inputs revert with RunResources at max_ticks >= 35k or >= 45k.
-  - Example: "thn qj" fails at 35k, "upxffhwo" fails at 45k.
+- Budget sweep (200 texts, len<=23) shows max_ticks=34,000 as the highest tested value with 0 RunResources reverts.
+- RunResources starts at max_ticks=35,000 (1 revert) and grows through 36k/38k/40k.
 - A safer global budget avoids reverts while still delivering partial output.
 - Final default:
   - DEFAULT_MAX_TICKS = 30,000
   - SVG_CLOSEOUT_RESERVE_TICKS = 5,000
 
 Why 30,000
-- In random sampling (20 texts, len<=23), max_ticks=30,000 produced zero RPC reverts.
+- In random sampling (40 texts, len<=23) and a larger set (200 texts, len<=23), max_ticks=30,000 produced zero RPC reverts.
+- Budget sweep indicates 32k and 34k also avoid reverts on the same 200-text set, but 35k already reverts; 30k keeps a conservative buffer.
 - Many cases exhaust as expected (status=1), which is correct behavior and avoids revert risk.
 
 What This Enables

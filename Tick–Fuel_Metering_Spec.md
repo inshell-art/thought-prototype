@@ -130,16 +130,18 @@ Notes on Tick Cost Calibration
 
 Calibration Results (devnet, RPC spec 0.9.0)
 - Used `starknet_simulateTransactions` (Invoke v3, SKIP_VALIDATE) to collect `l2_gas` and compared to `preview_metrics.ticks_used`.
-- Observed near-linear fit: `l2_gas ≈ 46,553 * ticks - 2,648,334` with R² ≈ 0.999.
-- Sample points (text → ticks_used → l2_gas):
-  - "h" → 173 → 9,011,200
-  - "hi" → 1,236 → 62,811,200
-  - "hi this" → 24,693 → 1,161,411,200
-  - "ab cd" → 28,350 → 1,308,291,200
-- RunResources limit observed for some short inputs:
-  - `"thn qj"` reverts at `max_ticks >= 35,000`, succeeds at `30,000`.
-  - `"upxffhwo"` reverts at `max_ticks >= 45,000`, succeeds at `40,000`.
-- Random sampling (20 texts, len<=23) with `max_ticks = 30,000` produced no RPC reverts; many cases exhaust as expected.
+- Fits computed on status=0 (non-exhausted) samples only.
+- `max_ticks = 30,000`, 40 texts (len<=23): `l2_gas ≈ 43,935.1 * ticks + 8,894,586.3` with R²=0.9893; 0 reverts.
+- `max_ticks = 30,000`, 200 texts (len<=23): `l2_gas ≈ 42,703.7 * ticks + 21,510,370.0` with R²=0.9857; 0 reverts.
+- `max_ticks = 32,000`, 200 texts (len<=23): `l2_gas ≈ 42,374.5 * ticks + 23,624,777.9` with R²=0.9858; 0 reverts.
+- `max_ticks = 34,000`, 200 texts (len<=23): `l2_gas ≈ 42,374.5 * ticks + 23,624,777.9` with R²=0.9858; 0 reverts.
+- `max_ticks = 35,000`, 200 texts (len<=23): `l2_gas ≈ 42,345.9 * ticks + 23,824,935.3` with R²=0.9870; 1 RunResources revert.
+- `max_ticks = 36,000`, 200 texts (len<=23): `l2_gas ≈ 42,345.9 * ticks + 23,824,935.3` with R²=0.9870; 2 RunResources reverts.
+- `max_ticks = 38,000`, 200 texts (len<=23): `l2_gas ≈ 42,345.9 * ticks + 23,824,935.3` with R²=0.9870; 5 RunResources reverts.
+- `max_ticks = 40,000`, 40 texts (len<=23): `l2_gas ≈ 43,048.5 * ticks + 14,046,719.5` with R²=0.9880; 2 RunResources reverts.
+- `max_ticks = 40,000`, 200 texts (len<=23): `l2_gas ≈ 42,345.9 * ticks + 23,824,935.3` with R²=0.9870; 8 RunResources reverts.
+- RunResources starts at 35k on this dataset (examples: `"xba gp "`, `"    lm u"`), increases through 36k/38k/40k; `"upxffhwo"` reverts at 40k.
+- Random sampling at 30k produced no RPC reverts; many cases exhaust as expected.
 - Recommendation:
   - `DEFAULT_MAX_TICKS = 30,000` (safe across tested inputs; avoids RunResources reverts)
   - `SVG_CLOSEOUT_RESERVE_TICKS = 5,000` (kept)

@@ -14,6 +14,12 @@ const PREVIEW_SELECTOR =
 const MAX_TEXT_LEN = 23;
 const WORD_BYTES = 31;
 const U64_MAX = 18446744073709551615n;
+const RPC_URL =
+  (addresses as { rpcUrl?: string; rpc?: string }).rpcUrl ??
+  (addresses as { rpc?: string }).rpc;
+const THOUGHT_PREVIEWER_ADDRESS =
+  (addresses as { thoughtPreviewer?: { address?: string } }).thoughtPreviewer?.address ??
+  (addresses as { thought_previewer?: { address?: string } }).thought_previewer?.address;
 
 const storage: StorageState = {
   account_address: "",
@@ -243,6 +249,12 @@ const decodeByteArray = (felts: string[]): string => {
 };
 
 const callPreview = async (accountAddress: string, index: string, text: string): Promise<string> => {
+  if (!RPC_URL) {
+    throw new Error("RPC URL missing in contracts/addresses.devnet.json.");
+  }
+  if (!THOUGHT_PREVIEWER_ADDRESS) {
+    throw new Error("thought_previewer address missing in contracts/addresses.devnet.json.");
+  }
   const accountFelt = parseFeltInput(accountAddress);
   if (!accountFelt) {
     throw new Error("account_address must be hex (0x...) or digits.");
@@ -261,7 +273,7 @@ const callPreview = async (accountAddress: string, index: string, text: string):
     method: "starknet_call",
     params: [
       {
-        contract_address: addresses.thoughtPreviewer.address,
+        contract_address: THOUGHT_PREVIEWER_ADDRESS,
         entry_point_selector: PREVIEW_SELECTOR,
         calldata,
       },
@@ -269,7 +281,7 @@ const callPreview = async (accountAddress: string, index: string, text: string):
     ],
   };
 
-  const response = await fetch(addresses.rpcUrl, {
+  const response = await fetch(RPC_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
