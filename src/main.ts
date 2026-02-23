@@ -1,5 +1,5 @@
 import "./style.css";
-import { loadColorFont, parseColorFontJson, type ColorFont, type ColorFontData } from "./colorFont";
+import { parseColorFontJson, type ColorFont, type ColorFontData } from "./colorFont";
 import { renderColorFontSVG } from "./renderColorFontSVG";
 import { sanitizeThoughtText } from "./sanitizeThoughtText";
 
@@ -234,9 +234,8 @@ if (app) {
     if (state.svg) render();
   });
 
-  void (async () => {
-    const data = await loadColorFont();
-    applyColorFontData(data);
-    updateTextFromInput();
-  })();
+  updateTextFromInput();
+  if (legendGrid) {
+    legendGrid.innerHTML = "";
+  }
 }
