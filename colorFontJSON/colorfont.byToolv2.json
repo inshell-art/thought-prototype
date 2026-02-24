@@ -2,8 +2,8 @@
   "colors": [
     {
       "index": 1,
-      "name": "auburn",
-      "hex": "#a52a2a"
+      "name": "aqua",
+      "hex": "#00ffff"
     },
     {
       "index": 2,
@@ -12,17 +12,17 @@
     },
     {
       "index": 3,
-      "name": "cyan",
-      "hex": "#00ffff"
+      "name": "coffee",
+      "hex": "#6f4e37"
     },
     {
       "index": 4,
       "name": "denim",
-      "hex": "#228fff"
+      "hex": "#6699ff"
     },
     {
       "index": 5,
-      "name": "egg",
+      "name": "eggshell",
       "hex": "#fff9e3"
     },
     {
@@ -38,7 +38,7 @@
     {
       "index": 8,
       "name": "honey",
-      "hex": "#ec9706"
+      "hex": "#ffcc00"
     },
     {
       "index": 9,
@@ -47,7 +47,7 @@
     },
     {
       "index": 10,
-      "name": "jade",
+      "name": "jade green",
       "hex": "#00a86b"
     },
     {
@@ -62,8 +62,8 @@
     },
     {
       "index": 13,
-      "name": "mint",
-      "hex": "#99eecc"
+      "name": "maroon",
+      "hex": "#800000"
     },
     {
       "index": 14,
@@ -72,8 +72,8 @@
     },
     {
       "index": 15,
-      "name": "olive",
-      "hex": "#6b8e23"
+      "name": "orange",
+      "hex": "#ffa500"
     },
     {
       "index": 16,
@@ -93,22 +93,22 @@
     {
       "index": 19,
       "name": "salmon",
-      "hex": "#ff9999"
+      "hex": "#fa8072"
     },
     {
       "index": 20,
-      "name": "tomato",
-      "hex": "#ff6347"
+      "name": "teal",
+      "hex": "#008080"
     },
     {
       "index": 21,
       "name": "ultramarine",
-      "hex": "#4166f5"
+      "hex": "#5533ff"
     },
     {
       "index": 22,
       "name": "violet",
-      "hex": "#ee82ee"
+      "hex": "#aa55ff"
     },
     {
       "index": 23,
@@ -117,7 +117,7 @@
     },
     {
       "index": 24,
-      "name": "x-ray",
+      "name": "xray",
       "hex": "#bbcccc"
     },
     {
@@ -127,7 +127,7 @@
     },
     {
       "index": 26,
-      "name": "zombie",
+      "name": "zombie gray",
       "hex": "#778877"
     }
   ]

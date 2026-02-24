@@ -85,12 +85,18 @@ if (app) {
     svg: "",
   };
 
-  const computeCols = (cellSize: number, gap: number, padding: number) => {
-    const w = Math.max(1, Math.floor(output?.getBoundingClientRect().width ?? 1));
-    const denom = cellSize + gap;
-    if (denom <= 0) return 1;
-    const cols = Math.floor((w - padding * 2 + gap) / denom);
-    return Math.max(1, cols);
+  const buildSvgMarkup = (textValue: string, colorFont: ColorFont) => {
+    const cellSize = 28;
+    const gap = 1;
+    const padding = 28;
+
+    return renderColorFontSVG(textValue, colorFont, {
+      cols: textValue.length,
+      cellSize,
+      gap,
+      padding,
+      background: "#0d0f10",
+    });
   };
 
   const render = () => {
@@ -100,20 +106,7 @@ if (app) {
       state.svg = "";
       return;
     }
-    const cellSize = 28;
-    const gap = 1;
-    const padding = 0;
-    const cols = Math.min(32, computeCols(cellSize, gap, padding));
-    const canvasSize = Math.max(1, Math.floor(output.getBoundingClientRect().width));
-
-    const svg = renderColorFontSVG(state.text, state.colorFont, {
-      cols,
-      cellSize,
-      gap,
-      padding,
-      background: "#0d0f10",
-      canvasSize,
-    });
+    const svg = buildSvgMarkup(state.text, state.colorFont);
 
     output.innerHTML = svg;
     state.svg = svg;
@@ -201,6 +194,21 @@ if (app) {
     if (state.svg) render();
   };
 
+  const downloadSvg = () => {
+    if (!state.svg) return;
+    const downloadMarkup = state.svg;
+    const safeText = state.text.trim().slice(0, 48).replace(/\s+/g, "_").replace(/[^a-z0-9_-]/gi, "_") || "thought-font";
+    const blob = new Blob([downloadMarkup], { type: "image/svg+xml" });
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `${safeText}.svg`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(blobUrl);
+  };
+
   const handleImport = async () => {
     const file = importInput?.files?.[0];
     if (!file) return;
@@ -230,9 +238,11 @@ if (app) {
   });
   importInput?.addEventListener("change", handleImport);
 
-  window.addEventListener("resize", () => {
-    if (state.svg) render();
+  output?.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    downloadSvg();
   });
+
 
   updateTextFromInput();
   if (legendGrid) {
