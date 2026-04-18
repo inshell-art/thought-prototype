@@ -1,6 +1,10 @@
-import addresses from "../contracts/addresses.devnet.json";
+import { Contract, JsonRpcProvider } from "ethers";
+
+import addresses from "../evm/addresses.anvil.json";
 import { DownloadSVG } from "./helpers/download-svg";
 
+// Transitional EVM bridge for local iteration. This path is expected to be replaced
+// by the upcoming contract/renderer refactor, so keep changes here narrowly scoped.
 type StorageState = {
   account_address: string;
   index: string;
@@ -9,17 +13,23 @@ type StorageState = {
   isLoading: boolean;
 };
 
-const PREVIEW_SELECTOR =
-  "0x0277ac1699ea4fbcffbe82bf94e436b88364a3e238c39d0e07f47f9b4749eeed";
+type EvmAddresses = {
+  rpcUrl?: string;
+  thoughtPreviewer?: {
+    address?: string;
+  };
+};
+
 const MAX_TEXT_LEN = 23;
-const WORD_BYTES = 31;
 const U64_MAX = 18446744073709551615n;
-const RPC_URL =
-  (addresses as { rpcUrl?: string; rpc?: string }).rpcUrl ??
-  (addresses as { rpc?: string }).rpc;
-const THOUGHT_PREVIEWER_ADDRESS =
-  (addresses as { thoughtPreviewer?: { address?: string } }).thoughtPreviewer?.address ??
-  (addresses as { thought_previewer?: { address?: string } }).thought_previewer?.address;
+const RPC_URL = (addresses as EvmAddresses).rpcUrl;
+const THOUGHT_PREVIEWER_ADDRESS = (addresses as EvmAddresses).thoughtPreviewer?.address;
+const THOUGHT_PREVIEWER_ABI = [
+  "function preview(uint256 accountAddress, uint64 index, string text) view returns (string)",
+] as const;
+
+let provider: JsonRpcProvider | null = null;
+let previewer: Contract | null = null;
 
 const storage: StorageState = {
   account_address: "",
@@ -146,165 +156,79 @@ indexDownButton?.addEventListener("click", () => {
   setIndexValue(Number.isFinite(current) ? current - 1 : 0);
 });
 
-const toHex = (value: bigint): string => {
-  return value === 0n ? "0x0" : `0x${value.toString(16)}`;
-};
-
-const parseFeltInput = (value: string): string | null => {
+const parseUint256Input = (value: string): bigint | null => {
   const trimmed = value.trim().toLowerCase();
   if (!trimmed) {
-    return "0x0";
+    return 0n;
   }
-  if (trimmed.startsWith("0x")) {
-    try {
-      void BigInt(trimmed);
-      return trimmed;
-    } catch {
-      return null;
+  try {
+    if (trimmed.startsWith("0x")) {
+      return BigInt(trimmed);
     }
-  }
-  if (!/^\d+$/.test(trimmed)) {
+    if (/^\d+$/.test(trimmed)) {
+      return BigInt(trimmed);
+    }
+  } catch {
     return null;
   }
-  return toHex(BigInt(trimmed));
+  return null;
 };
 
-const parseIndexInput = (value: string): string | null => {
+const parseIndexInput = (value: string): bigint | null => {
   const trimmed = value.trim();
   if (!trimmed) {
-    return "0x0";
+    return 0n;
   }
   if (!/^\d+$/.test(trimmed)) {
     return null;
   }
-  const num = BigInt(trimmed);
-  if (num > U64_MAX) {
+  const parsed = BigInt(trimmed);
+  if (parsed > U64_MAX) {
     return null;
   }
-  return toHex(num);
+  return parsed;
 };
 
-const encodeByteArray = (text: string): string[] => {
-  const bytes = Array.from(new TextEncoder().encode(text));
-  const data: bigint[] = [];
-  for (let i = 0; i + WORD_BYTES <= bytes.length; i += WORD_BYTES) {
-    let word = 0n;
-    for (let j = 0; j < WORD_BYTES; j += 1) {
-      word = (word << 8n) + BigInt(bytes[i + j]);
-    }
-    data.push(word);
+const getPreviewer = (): Contract => {
+  if (!RPC_URL) {
+    throw new Error("RPC URL missing in evm/addresses.anvil.json.");
   }
-
-  const pendingLen = bytes.length % WORD_BYTES;
-  let pendingWord = 0n;
-  if (pendingLen > 0) {
-    for (let i = bytes.length - pendingLen; i < bytes.length; i += 1) {
-      pendingWord = (pendingWord << 8n) + BigInt(bytes[i]);
-    }
+  if (!THOUGHT_PREVIEWER_ADDRESS) {
+    throw new Error("thoughtPreviewer address missing in evm/addresses.anvil.json. Run ./scripts/deploy-evm-local.sh after starting anvil.");
   }
-
-  const calldata: string[] = [toHex(BigInt(data.length))];
-  data.forEach((word) => calldata.push(toHex(word)));
-  calldata.push(toHex(pendingWord));
-  calldata.push(toHex(BigInt(pendingLen)));
-  return calldata;
+  if (!provider) {
+    provider = new JsonRpcProvider(RPC_URL);
+  }
+  if (!previewer) {
+    previewer = new Contract(THOUGHT_PREVIEWER_ADDRESS, THOUGHT_PREVIEWER_ABI, provider);
+  }
+  return previewer;
 };
 
-const decodeWordBytes = (word: bigint, length: number): number[] => {
-  const bytes: number[] = [];
-  for (let i = 0; i < length; i += 1) {
-    const shift = BigInt(8 * (length - 1 - i));
-    const byte = Number((word >> shift) & 0xffn);
-    bytes.push(byte);
+const extractEvmError = (error: unknown): string => {
+  if (typeof error === "object" && error !== null) {
+    const withReason = error as { shortMessage?: string; reason?: string; message?: string };
+    return withReason.shortMessage ?? withReason.reason ?? withReason.message ?? "Contract call failed";
   }
-  return bytes;
-};
-
-const decodeByteArray = (felts: string[]): string => {
-  if (felts.length < 3) {
-    return "";
-  }
-  const dataLen = Number(BigInt(felts[0]));
-  let cursor = 1;
-  const bytes: number[] = [];
-
-  for (let i = 0; i < dataLen; i += 1) {
-    const word = BigInt(felts[cursor]);
-    cursor += 1;
-    bytes.push(...decodeWordBytes(word, WORD_BYTES));
-  }
-
-  if (cursor >= felts.length) {
-    return "";
-  }
-
-  const pendingWord = BigInt(felts[cursor]);
-  cursor += 1;
-  const pendingLen = cursor < felts.length ? Number(BigInt(felts[cursor])) : 0;
-  if (pendingLen > 0) {
-    bytes.push(...decodeWordBytes(pendingWord, pendingLen));
-  }
-
-  return new TextDecoder().decode(Uint8Array.from(bytes));
+  return "Contract call failed";
 };
 
 const callPreview = async (accountAddress: string, index: string, text: string): Promise<string> => {
-  if (!RPC_URL) {
-    throw new Error("RPC URL missing in contracts/addresses.devnet.json.");
-  }
-  if (!THOUGHT_PREVIEWER_ADDRESS) {
-    throw new Error("thought_previewer address missing in contracts/addresses.devnet.json.");
-  }
-  const accountFelt = parseFeltInput(accountAddress);
-  if (!accountFelt) {
+  const accountValue = parseUint256Input(accountAddress);
+  if (accountValue === null) {
     throw new Error("account_address must be hex (0x...) or digits.");
   }
-  const indexFelt = parseIndexInput(index);
-  if (!indexFelt) {
+  const indexValue = parseIndexInput(index);
+  if (indexValue === null) {
     throw new Error("index must be an unsigned 64-bit integer.");
   }
 
-  const byteArrayCalldata = encodeByteArray(text);
-  const calldata = [accountFelt, indexFelt, ...byteArrayCalldata];
-
-  const payload = {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "starknet_call",
-    params: [
-      {
-        contract_address: THOUGHT_PREVIEWER_ADDRESS,
-        entry_point_selector: PREVIEW_SELECTOR,
-        calldata,
-      },
-      "latest",
-    ],
-  };
-
-  const response = await fetch(RPC_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`RPC error: ${response.status}`);
+  try {
+    const contract = getPreviewer();
+    return (await contract.preview(accountValue, indexValue, text)) as string;
+  } catch (error) {
+    throw new Error(extractEvmError(error));
   }
-
-  const data = await response.json();
-  if (data.error) {
-    const message = data.error.message || "RPC call failed";
-    throw new Error(message);
-  }
-
-  const result = data.result as string[];
-  if (!Array.isArray(result)) {
-    throw new Error("RPC result missing.");
-  }
-
-  return decodeByteArray(result);
 };
 
 const setLoading = (loading: boolean) => {
@@ -347,8 +271,7 @@ async function triggerFromInput() {
     const svg = await callPreview(storage.account_address, storage.index, storage.thoughtStr);
     setOutput(svg);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Contract call failed";
-    showError(message);
+    showError(extractEvmError(error));
   } finally {
     setLoading(false);
   }
