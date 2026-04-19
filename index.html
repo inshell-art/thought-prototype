@@ -3,6 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/inshell.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>THOUGHT</title>
 </head>
@@ -25,25 +26,74 @@
       </div>
 
       <div class="frontpage-input-panel">
-        <label class="frontpage-label" for="input-box">Input</label>
+        <div class="frontpage-actions">
+          <div class="frontpage-cta">
+            <button id="run-agent" class="frontpage-button" type="button">[ run ]</button>
+            <button
+              id="reset-thought"
+              class="frontpage-reset is-hidden"
+              type="button"
+              aria-label="Clear current thought"
+            >
+              x
+            </button>
+          </div>
+          <div class="frontpage-notices">
+            <span id="run-status" class="frontpage-status is-hidden" aria-live="polite"></span>
+            <div id="input-warning" class="frontpage-warning is-hidden" role="alert" aria-live="polite"></div>
+          </div>
+        </div>
+        <label class="frontpage-label" for="prompt-box">prompt</label>
         <input
-          id="input-box"
+          id="prompt-box"
+          class="frontpage-prompt"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="author a one-round thought agent with your prompt"
+        />
+        <label class="frontpage-label" for="provider-box">provider</label>
+        <div class="frontpage-select-wrap">
+          <select id="provider-box" class="frontpage-select">
+            <option value="harness">local harness</option>
+            <option value="openai">openai</option>
+            <option value="groq">groq</option>
+            <option value="anthropic">anthropic</option>
+            <option value="openrouter">openrouter</option>
+          </select>
+          <span class="frontpage-select-arrow" aria-hidden="true"></span>
+        </div>
+        <label class="frontpage-label" for="api-key-box">api key</label>
+        <input
+          id="api-key-box"
+          class="frontpage-input"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="paste a local api key for this browser session"
+        />
+        <label class="frontpage-label" for="model-box">model</label>
+        <input
+          id="model-box"
           class="frontpage-input"
           type="text"
-          inputmode="text"
           autocomplete="off"
-          autocapitalize="characters"
           spellcheck="false"
-          placeholder="Type English letters only"
+          placeholder="model name"
         />
-        <div id="input-warning" class="frontpage-warning" role="alert" aria-live="polite"></div>
-        <p class="frontpage-note">Allowed: A-Z and spaces. Rendering updates as you type.</p>
+        <p class="frontpage-note">
+          one round only. the page sends your prompt plus bundled <code>THOUGHT.md</code> to the
+          selected provider, then converts the returned text into images on the canvas.
+        </p>
       </div>
+
+      <section class="agent-output-panel">
+        <pre id="agent-output" class="agent-output"></pre>
+      </section>
 
       <section class="color-font-panel" aria-labelledby="color-font-title">
         <div class="color-font-header">
-          <p class="frontpage-label">Color Font</p>
-          <h2 id="color-font-title" class="color-font-title">Fixed letter to color mapping</h2>
+          <p class="frontpage-label">color font</p>
         </div>
         <div id="color-font-legend" class="color-font-legend" aria-label="Color font legend"></div>
       </section>

@@ -1,0 +1,134 @@
+{
+  "colors": [
+    {
+      "index": 1,
+      "name": "aqua",
+      "hex": "#00ffff"
+    },
+    {
+      "index": 2,
+      "name": "blue",
+      "hex": "#0000ff"
+    },
+    {
+      "index": 3,
+      "name": "coffee",
+      "hex": "#6f4e37"
+    },
+    {
+      "index": 4,
+      "name": "denim",
+      "hex": "#6699ff"
+    },
+    {
+      "index": 5,
+      "name": "eggshell",
+      "hex": "#fff9e3"
+    },
+    {
+      "index": 6,
+      "name": "fuchsia",
+      "hex": "#ff00ff"
+    },
+    {
+      "index": 7,
+      "name": "green",
+      "hex": "#008000"
+    },
+    {
+      "index": 8,
+      "name": "honey",
+      "hex": "#ffcc00"
+    },
+    {
+      "index": 9,
+      "name": "indigo",
+      "hex": "#4b0082"
+    },
+    {
+      "index": 10,
+      "name": "jade green",
+      "hex": "#00a86b"
+    },
+    {
+      "index": 11,
+      "name": "khaki",
+      "hex": "#c3b091"
+    },
+    {
+      "index": 12,
+      "name": "lime",
+      "hex": "#00ff00"
+    },
+    {
+      "index": 13,
+      "name": "maroon",
+      "hex": "#800000"
+    },
+    {
+      "index": 14,
+      "name": "navy",
+      "hex": "#0a1172"
+    },
+    {
+      "index": 15,
+      "name": "orange",
+      "hex": "#ffa500"
+    },
+    {
+      "index": 16,
+      "name": "pink",
+      "hex": "#ffaadd"
+    },
+    {
+      "index": 17,
+      "name": "quicksilver",
+      "hex": "#a6a6a6"
+    },
+    {
+      "index": 18,
+      "name": "red",
+      "hex": "#ff0000"
+    },
+    {
+      "index": 19,
+      "name": "salmon",
+      "hex": "#fa8072"
+    },
+    {
+      "index": 20,
+      "name": "teal",
+      "hex": "#008080"
+    },
+    {
+      "index": 21,
+      "name": "ultramarine",
+      "hex": "#5533ff"
+    },
+    {
+      "index": 22,
+      "name": "violet",
+      "hex": "#aa55ff"
+    },
+    {
+      "index": 23,
+      "name": "wheat",
+      "hex": "#f5deb3"
+    },
+    {
+      "index": 24,
+      "name": "xray",
+      "hex": "#bbcccc"
+    },
+    {
+      "index": 25,
+      "name": "yellow",
+      "hex": "#ffff00"
+    },
+    {
+      "index": 26,
+      "name": "zombie gray",
+      "hex": "#778877"
+    }
+  ]
+}
