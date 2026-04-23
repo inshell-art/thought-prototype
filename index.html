@@ -13,90 +13,166 @@
 
   <main class="frontpage-shell">
     <section class="frontpage-stage" aria-labelledby="frontpage-title">
-      <h1 id="frontpage-title" class="frontpage-title">THOUGHT</h1>
+      <div class="frontpage-main">
+        <div class="thought-canvas-column">
+          <h1 id="frontpage-title" class="frontpage-title">THOUGHT</h1>
 
-      <div class="thought-canvas-frame">
-        <canvas
-          id="thought-grid"
-          class="thought-grid"
-          width="960"
-          height="540"
-          aria-label="Canvas preview of the current character squares"
-        ></canvas>
-      </div>
+          <div class="thought-canvas-panel">
+            <div class="thought-canvas-frame">
+              <canvas
+                id="thought-grid"
+                class="thought-grid"
+                width="960"
+                height="540"
+                aria-label="Canvas preview of the current character squares"
+              ></canvas>
+            </div>
+          </div>
+        </div>
 
-      <div class="frontpage-input-panel">
-        <div class="frontpage-actions">
-          <div class="frontpage-cta">
-            <button id="run-agent" class="frontpage-button" type="button">[ run ]</button>
-            <button
-              id="reset-thought"
-              class="frontpage-reset is-hidden"
-              type="button"
-              aria-label="Clear current thought"
+        <div class="frontpage-side">
+          <div class="frontpage-input-panel">
+            <div class="frontpage-field">
+              <span class="frontpage-label">mode</span>
+              <div class="frontpage-mode" role="group" aria-label="Mode">
+                <button
+                  id="mode-connect"
+                  class="frontpage-mode-button is-active"
+                  type="button"
+                >
+                  connect
+                </button>
+                <button id="mode-direct" class="frontpage-mode-button" type="button">
+                  direct
+                </button>
+                <button id="mode-local" class="frontpage-mode-button" type="button">
+                  local
+                </button>
+              </div>
+            </div>
+            <div id="connect-panel" class="frontpage-auth">
+              <button id="connect-openrouter" class="frontpage-auth-button" type="button">
+                [ authorize openrouter ]
+              </button>
+              <div id="connect-status-row" class="frontpage-auth-row is-hidden">
+                <span id="connect-status-copy" class="frontpage-auth-status">connected via openrouter</span>
+                <button
+                  id="disconnect-openrouter"
+                  class="frontpage-auth-clear"
+                  type="button"
+                >
+                  disconnect
+                </button>
+              </div>
+              <p class="frontpage-meta">
+                delegated cloud access.<br />
+                revocable.<br />
+                no raw key paste.
+              </p>
+            </div>
+            <div id="provider-field" class="frontpage-field">
+              <label class="frontpage-label" for="provider-box">provider</label>
+              <div class="frontpage-select-wrap">
+                <select id="provider-box" class="frontpage-select">
+                  <option value="openai">openai</option>
+                  <option value="openrouter">openrouter</option>
+                  <option value="anthropic">anthropic</option>
+                </select>
+                <span class="frontpage-select-arrow" aria-hidden="true"></span>
+              </div>
+            </div>
+            <div id="api-key-field" class="frontpage-field">
+              <label class="frontpage-label" for="api-key-box">api key</label>
+              <input
+                id="api-key-box"
+                class="frontpage-input"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="session only. never stored by thought."
+              />
+            </div>
+            <div id="local-engine-field" class="frontpage-field is-hidden">
+              <span class="frontpage-label">engine</span>
+              <div id="local-engine-value" class="frontpage-static">ollama</div>
+            </div>
+            <div id="local-status" class="frontpage-meta is-hidden" aria-live="polite"></div>
+            <div id="local-helper" class="frontpage-meta is-hidden">
+              runs on this machine.<br />
+              no cloud call.
+            </div>
+            <div class="frontpage-field">
+              <label class="frontpage-label" for="model-box">model</label>
+              <div class="frontpage-select-wrap">
+                <select id="model-box" class="frontpage-select"></select>
+                <span class="frontpage-select-arrow" aria-hidden="true"></span>
+              </div>
+              <input
+                id="model-manual-box"
+                class="frontpage-input is-hidden"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="custom model id"
+              />
+            </div>
+            <div class="frontpage-field">
+              <label class="frontpage-label" for="prompt-box">prompt</label>
+              <input
+                id="prompt-box"
+                class="frontpage-prompt"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="author a one-round thought agent with your prompt"
+              />
+            </div>
+            <div class="frontpage-actions">
+              <div class="frontpage-cta">
+                <button id="run-agent" class="frontpage-button" type="button">[ run ]</button>
+                <button
+                  id="reset-thought"
+                  class="frontpage-reset is-hidden"
+                  type="button"
+                  aria-label="Clear current thought"
+                >
+                  x
+                </button>
+              </div>
+              <div class="frontpage-notices">
+                <span id="run-status" class="frontpage-status is-hidden" aria-live="polite"></span>
+                <div id="input-warning" class="frontpage-warning is-hidden" role="alert" aria-live="polite"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="color-font-footer">
+            <p class="frontpage-note">
+              one round only.<br />
+              prompt + bundled
+              <a
+                id="thought-instructions-link"
+                class="frontpage-note__link"
+                href="#"
+                target="_blank"
+                rel="noopener noreferrer"
+              >THOUGHT.md</a>
+              in.<br />
+              canvas out.
+            </p>
+            <a
+              class="color-font-footer__link"
+              href="https://github.com/inshell-art/THOUGHT/blob/main/colorFontJSON/colorfont.byToolv2.json"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-label="color font"
+              aria-label="Open the color font JSON in the THOUGHT GitHub repository"
             >
-              x
-            </button>
-          </div>
-          <div class="frontpage-notices">
-            <span id="run-status" class="frontpage-status is-hidden" aria-live="polite"></span>
-            <div id="input-warning" class="frontpage-warning is-hidden" role="alert" aria-live="polite"></div>
+              ■■■■■■■■■■
+            </a>
           </div>
         </div>
-        <label class="frontpage-label" for="prompt-box">prompt</label>
-        <input
-          id="prompt-box"
-          class="frontpage-prompt"
-          type="text"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="author a one-round thought agent with your prompt"
-        />
-        <label class="frontpage-label" for="provider-box">provider</label>
-        <div class="frontpage-select-wrap">
-          <select id="provider-box" class="frontpage-select">
-            <option value="harness">local harness</option>
-            <option value="openai">openai</option>
-            <option value="groq">groq</option>
-            <option value="anthropic">anthropic</option>
-            <option value="openrouter">openrouter</option>
-          </select>
-          <span class="frontpage-select-arrow" aria-hidden="true"></span>
-        </div>
-        <label class="frontpage-label" for="api-key-box">api key</label>
-        <input
-          id="api-key-box"
-          class="frontpage-input"
-          type="password"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="paste a local api key for this browser session"
-        />
-        <label class="frontpage-label" for="model-box">model</label>
-        <input
-          id="model-box"
-          class="frontpage-input"
-          type="text"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="model name"
-        />
-        <p class="frontpage-note">
-          one round only. the page sends your prompt plus bundled <code>THOUGHT.md</code> to the
-          selected provider, then converts the returned text into images on the canvas.
-        </p>
       </div>
-
-      <section class="agent-output-panel">
-        <pre id="agent-output" class="agent-output"></pre>
-      </section>
-
-      <section class="color-font-panel" aria-labelledby="color-font-title">
-        <div class="color-font-header">
-          <p class="frontpage-label">color font</p>
-        </div>
-        <div id="color-font-legend" class="color-font-legend" aria-label="Color font legend"></div>
-      </section>
     </section>
   </main>
 
