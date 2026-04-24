@@ -55,13 +55,13 @@
                 [ authorize openrouter ]
               </button>
               <div id="connect-status-row" class="frontpage-auth-row is-hidden">
-                <span id="connect-status-copy" class="frontpage-auth-status">connected via openrouter</span>
+                <span id="connect-status-copy" class="frontpage-auth-status">openrouter linked</span>
                 <button
                   id="disconnect-openrouter"
                   class="frontpage-auth-clear"
                   type="button"
                 >
-                  disconnect
+                  [ disconnect ]
                 </button>
               </div>
               <p class="frontpage-meta">
@@ -127,9 +127,32 @@
                 placeholder="author a one-round thought agent with your prompt"
               />
             </div>
+            <div id="thought-file-field" class="frontpage-field">
+              <span class="frontpage-label">thought.md</span>
+              <div class="frontpage-upload">
+                <button id="upload-thought-file" class="frontpage-upload-button" type="button">
+                  [ upload THOUGHT.md ]
+                </button>
+                <button
+                  id="clear-thought-file"
+                  class="frontpage-upload-clear is-hidden"
+                  type="button"
+                >
+                  use bundled
+                </button>
+              </div>
+              <input
+                id="thought-file-input"
+                class="frontpage-file-input"
+                type="file"
+                accept=".md,text/markdown,text/plain"
+              />
+              <p id="thought-file-status" class="frontpage-meta">using bundled THOUGHT.md.</p>
+            </div>
             <div class="frontpage-actions">
               <div class="frontpage-cta">
                 <button id="run-agent" class="frontpage-button" type="button">[ run ]</button>
+                <span id="action-status-copy" class="frontpage-action-status is-hidden"></span>
                 <button
                   id="mint-wallet-toggle"
                   class="frontpage-wallet-toggle is-hidden"
@@ -142,11 +165,11 @@
                 </button>
                 <button
                   id="reset-thought"
-                  class="frontpage-reset is-hidden"
+                  class="frontpage-secondary-action is-hidden"
                   type="button"
-                  aria-label="Clear current thought"
+                  aria-label="Secondary thought action"
                 >
-                  x
+                  [ reset ]
                 </button>
                 <div id="mint-wallet-menu" class="frontpage-wallet-menu is-hidden" role="menu">
                   <div class="frontpage-wallet-meta">
@@ -186,15 +209,14 @@
           <div class="color-font-footer">
             <p class="frontpage-note">
               one round only.<br />
-              prompt + bundled
+              prompt +
               <a
                 id="thought-instructions-link"
                 class="frontpage-note__link"
                 href="#"
                 target="_blank"
                 rel="noopener noreferrer"
-              >THOUGHT.md</a>
-              in.<br />
+              >THOUGHT.md</a> in.<br />
               canvas out.
             </p>
             <a

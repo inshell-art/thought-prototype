@@ -1,12 +1,14 @@
 {
   "name": "thought",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:lan": "vite --host 0.0.0.0 --port 5178",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "preview:lan": "vite preview --host 0.0.0.0 --port 4173",
     "build:evm": "cd evm && forge build",
     "test:evm": "cd evm && forge test",
     "deploy:evm-local": "./scripts/deploy-evm-local.sh"

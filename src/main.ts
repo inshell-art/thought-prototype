@@ -60,6 +60,11 @@ type LegacySessionState = {
   providers?: Record<string, LegacyProviderState | undefined>;
 };
 
+type ThoughtInstructionsOverride = {
+  name: string;
+  content: string;
+};
+
 type ThoughtSessionState = {
   mode: Mode;
   prompt: string;
@@ -87,6 +92,8 @@ type EvmAddresses = {
 };
 
 type EthereumProvider = {
+  isMetaMask?: boolean;
+  providers?: EthereumProvider[];
   request(args: { method: string; params?: unknown[] | object }): Promise<unknown>;
   on?(event: string, listener: (...args: unknown[]) => void): void;
   removeListener?(event: string, listener: (...args: unknown[]) => void): void;
@@ -94,12 +101,27 @@ type EthereumProvider = {
 
 type MintTxState = "idle" | "awaiting_signature" | "submitted" | "failed";
 
-type MintAction = "connect" | "switch" | "mint" | "pending" | "retry" | "none";
+type ThoughtRunState = "idle" | "running" | "output_ready" | "run_failed";
 
-type MintCtaState = {
-  label: string;
-  disabled: boolean;
-  action: MintAction;
+type PrimaryActionState =
+  | "run"
+  | "retry_run"
+  | "connect_wallet"
+  | "switch_wallet"
+  | "mint"
+  | "retry_mint"
+  | "none";
+
+type SecondaryActionState = "reset" | "view_tx" | "none";
+
+type ActionPresentation = {
+  primaryLabel: string;
+  primaryDisabled: boolean;
+  primaryAction: PrimaryActionState;
+  status: string;
+  secondaryLabel: string;
+  secondaryAction: SecondaryActionState;
+  hidePrimary?: boolean;
 };
 
 type WalletDotState = "off" | "on" | "pending" | "error";
@@ -128,6 +150,8 @@ const CANVAS_PADDING = 28;
 const IMAGE_RADIUS = 0;
 const BACKGROUND_FILL = "#050505";
 const THOUGHT_SESSION_STORAGE_KEY = "thought-provider-session";
+const THOUGHT_INSTRUCTIONS_OVERRIDE_KEY = "thought-instructions-override";
+const ENABLE_THOUGHT_UPLOAD = window.location.port === "5188";
 const OPENROUTER_PKCE_VERIFIER_KEY = "thought-openrouter-pkce-verifier";
 const OPENROUTER_AUTH_URL = "https://openrouter.ai/auth";
 const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/auth/keys";
@@ -236,7 +260,13 @@ const thoughtCanvasFrame = document.querySelector(".thought-canvas-frame") as HT
 const modelBox = document.getElementById("model-box") as HTMLSelectElement | null;
 const modelManualBox = document.getElementById("model-manual-box") as HTMLInputElement | null;
 const promptBox = document.getElementById("prompt-box") as HTMLInputElement | null;
+const thoughtFileField = document.getElementById("thought-file-field") as HTMLElement | null;
+const uploadThoughtFileButton = document.getElementById("upload-thought-file") as HTMLButtonElement | null;
+const clearThoughtFileButton = document.getElementById("clear-thought-file") as HTMLButtonElement | null;
+const thoughtFileInput = document.getElementById("thought-file-input") as HTMLInputElement | null;
+const thoughtFileStatus = document.getElementById("thought-file-status") as HTMLElement | null;
 const runAgentButton = document.getElementById("run-agent") as HTMLButtonElement | null;
+const actionStatusCopy = document.getElementById("action-status-copy") as HTMLElement | null;
 const mintWalletToggle = document.getElementById("mint-wallet-toggle") as HTMLButtonElement | null;
 const mintWalletDot = document.getElementById("mint-wallet-dot") as HTMLElement | null;
 const mintWalletMenu = document.getElementById("mint-wallet-menu") as HTMLElement | null;
@@ -279,7 +309,13 @@ if (
   !modelBox ||
   !modelManualBox ||
   !promptBox ||
+  !thoughtFileField ||
+  !uploadThoughtFileButton ||
+  !clearThoughtFileButton ||
+  !thoughtFileInput ||
+  !thoughtFileStatus ||
   !runAgentButton ||
+  !actionStatusCopy ||
   !mintWalletToggle ||
   !mintWalletDot ||
   !mintWalletMenu ||
@@ -299,7 +335,6 @@ if (
   throw new Error("Front page elements are missing.");
 }
 
-thoughtInstructionsLink.href = thoughtInstructionsUrl;
 localEngineValue.textContent = LOCAL_ENGINE_LABEL;
 
 const context = canvas.getContext("2d");
@@ -310,9 +345,13 @@ if (!context) {
 
 let statusTimer: number | null = null;
 let warningTimer: number | null = null;
-let ctaMode: "run" | "mint" = "run";
 let currentOutputText = "";
 let runInFlight = false;
+let runState: ThoughtRunState = "idle";
+let walletConnectInFlight = false;
+let primaryActionState: PrimaryActionState = "run";
+let secondaryActionState: SecondaryActionState = "none";
+let thoughtInstructionsObjectUrl: string | null = null;
 const modelOptionsCache = new Map<ModelSourceId, ModelOption[]>();
 const modelOptionsLoading = new Set<ModelSourceId>();
 const walletState: ThoughtWalletState = {
@@ -462,8 +501,145 @@ const writeSessionState = () => {
   sessionStorage.setItem(THOUGHT_SESSION_STORAGE_KEY, JSON.stringify(sessionState));
 };
 
-const getEthereumProvider = () =>
-  (window as Window & { ethereum?: EthereumProvider }).ethereum ?? null;
+const readThoughtInstructionsOverride = (): ThoughtInstructionsOverride | null => {
+  if (!ENABLE_THOUGHT_UPLOAD) {
+    sessionStorage.removeItem(THOUGHT_INSTRUCTIONS_OVERRIDE_KEY);
+    return null;
+  }
+
+  const raw = sessionStorage.getItem(THOUGHT_INSTRUCTIONS_OVERRIDE_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<ThoughtInstructionsOverride>;
+    const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
+    const content = typeof parsed.content === "string" ? parsed.content : "";
+
+    if (!name || !content.trim()) {
+      return null;
+    }
+
+    return { name, content };
+  } catch {
+    return null;
+  }
+};
+
+let thoughtInstructionsOverride = readThoughtInstructionsOverride();
+
+const writeThoughtInstructionsOverride = () => {
+  if (!ENABLE_THOUGHT_UPLOAD) {
+    sessionStorage.removeItem(THOUGHT_INSTRUCTIONS_OVERRIDE_KEY);
+    return;
+  }
+
+  if (thoughtInstructionsOverride) {
+    sessionStorage.setItem(
+      THOUGHT_INSTRUCTIONS_OVERRIDE_KEY,
+      JSON.stringify(thoughtInstructionsOverride),
+    );
+  } else {
+    sessionStorage.removeItem(THOUGHT_INSTRUCTIONS_OVERRIDE_KEY);
+  }
+};
+
+const getActiveThoughtInstructions = () =>
+  (thoughtInstructionsOverride?.content ?? thoughtInstructions).trim();
+
+const getActiveThoughtInstructionsLabel = () =>
+  thoughtInstructionsOverride?.name ?? "bundled THOUGHT.md";
+
+const isLoopbackHost = (hostname: string) =>
+  hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+
+const isOpenRouterConnectSupported = () => {
+  if (isLoopbackHost(window.location.hostname)) {
+    return true;
+  }
+
+  if (window.location.protocol !== "https:") {
+    return false;
+  }
+
+  const port = window.location.port;
+  return port === "" || port === "443" || port === "3000";
+};
+
+const getOpenRouterConnectConstraintMessage = () =>
+  "openrouter connect needs localhost or https on port 443 or 3000. use direct mode on LAN http.";
+
+const revokeThoughtInstructionsObjectUrl = () => {
+  if (thoughtInstructionsObjectUrl) {
+    URL.revokeObjectURL(thoughtInstructionsObjectUrl);
+    thoughtInstructionsObjectUrl = null;
+  }
+};
+
+const syncThoughtInstructionsLink = () => {
+  revokeThoughtInstructionsObjectUrl();
+
+  if (thoughtInstructionsOverride) {
+    thoughtInstructionsObjectUrl = URL.createObjectURL(
+      new Blob([thoughtInstructionsOverride.content], {
+        type: "text/markdown;charset=utf-8",
+      }),
+    );
+    thoughtInstructionsLink.href = thoughtInstructionsObjectUrl;
+    thoughtInstructionsLink.download = thoughtInstructionsOverride.name || "THOUGHT.md";
+    thoughtInstructionsLink.title = `Open ${thoughtInstructionsOverride.name || "THOUGHT.md"}`;
+    return;
+  }
+
+  thoughtInstructionsLink.href = thoughtInstructionsUrl;
+  thoughtInstructionsLink.download = "";
+  thoughtInstructionsLink.title = "Open bundled THOUGHT.md";
+};
+
+const getInjectedProviders = () => {
+  const injected = (window as Window & { ethereum?: EthereumProvider }).ethereum;
+
+  if (!injected) {
+    return [];
+  }
+
+  if (Array.isArray(injected.providers) && injected.providers.length > 0) {
+    return injected.providers.filter(Boolean);
+  }
+
+  return [injected];
+};
+
+const getEthereumProvider = () => {
+  const providers = getInjectedProviders();
+  return providers.find((provider) => provider.isMetaMask) ?? providers[0] ?? null;
+};
+
+const extractPrimaryAccount = (accounts: unknown) =>
+  Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
+
+const waitForWalletAddress = async (ethereum: EthereumProvider, timeoutMs = 18000) => {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const account = extractPrimaryAccount(await ethereum.request({ method: "eth_accounts" }));
+      if (account) {
+        return account;
+      }
+    } catch {
+      // Keep polling while the wallet prompt is open.
+    }
+
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 250);
+    });
+  }
+
+  return "";
+};
 
 const getReadProvider = () => {
   if (!THOUGHT_RPC_URL) {
@@ -553,48 +729,188 @@ const getWalletDotState = (): WalletDotState => {
   return "off";
 };
 
-const getMintCtaState = (): MintCtaState => {
-  if (walletState.txState === "submitted") {
-    return { label: "pending", disabled: false, action: "pending" };
+const hasModelAccess = () => {
+  if (sessionState.mode === "connect") {
+    return sessionState.connect.apiKey.trim().length > 0;
+  }
+
+  if (sessionState.mode === "direct") {
+    return sessionState.direct.apiKey.trim().length > 0;
+  }
+
+  return sessionState.local.available === true;
+};
+
+const getActionPresentation = (): ActionPresentation => {
+  const hasOutput = currentOutputText.length > 0;
+
+  if (runState === "running" || runInFlight) {
+    return {
+      primaryLabel: "[ running ]",
+      primaryDisabled: true,
+      primaryAction: "none",
+      status: "",
+      secondaryLabel: "",
+      secondaryAction: "none",
+    };
   }
 
   if (walletState.txState === "awaiting_signature") {
-    return { label: "sign", disabled: true, action: "none" };
+    return {
+      primaryLabel: "[ minting ]",
+      primaryDisabled: true,
+      primaryAction: "none",
+      status: "confirm in wallet",
+      secondaryLabel: "",
+      secondaryAction: "none",
+    };
+  }
+
+  if (walletState.txState === "submitted") {
+    return {
+      primaryLabel: "[ minting ]",
+      primaryDisabled: true,
+      primaryAction: "none",
+      status: "pending tx",
+      secondaryLabel: "[ view tx ]",
+      secondaryAction: "view_tx",
+    };
+  }
+
+  if (walletState.mintedTokenId !== null) {
+    return {
+      primaryLabel: "",
+      primaryDisabled: true,
+      primaryAction: "none",
+      status: "minted",
+      secondaryLabel: "[ view tx ]",
+      secondaryAction: "view_tx",
+      hidePrimary: true,
+    };
   }
 
   if (walletState.txState === "failed") {
-    return { label: "retry", disabled: false, action: "retry" };
+    return {
+      primaryLabel: "[ retry ]",
+      primaryDisabled: false,
+      primaryAction: "retry_mint",
+      status: "mint failed",
+      secondaryLabel: "[ reset ]",
+      secondaryAction: "reset",
+    };
   }
 
-  if (!THOUGHT_RPC_URL || !THOUGHT_TOKEN_ADDRESS) {
-    return { label: "mint", disabled: true, action: "none" };
+  if (hasOutput) {
+    if (walletConnectInFlight) {
+      return {
+        primaryLabel: "[ connect wallet ]",
+        primaryDisabled: true,
+        primaryAction: "none",
+        status: "approve in wallet",
+        secondaryLabel: "[ reset ]",
+        secondaryAction: "reset",
+      };
+    }
+
+    if (!THOUGHT_RPC_URL || !THOUGHT_TOKEN_ADDRESS) {
+      return {
+        primaryLabel: "[ mint ]",
+        primaryDisabled: true,
+        primaryAction: "none",
+        status: "mint unavailable",
+        secondaryLabel: "[ reset ]",
+        secondaryAction: "reset",
+      };
+    }
+
+    if (!walletState.detected || !walletState.address) {
+      return {
+        primaryLabel: "[ connect wallet ]",
+        primaryDisabled: false,
+        primaryAction: "connect_wallet",
+        status: "output ready",
+        secondaryLabel: "[ reset ]",
+        secondaryAction: "reset",
+      };
+    }
+
+    if (walletState.chainId !== THOUGHT_CHAIN_ID) {
+      return {
+        primaryLabel: "[ switch wallet ]",
+        primaryDisabled: false,
+        primaryAction: "switch_wallet",
+        status: "output ready",
+        secondaryLabel: "[ reset ]",
+        secondaryAction: "reset",
+      };
+    }
+
+    if (walletState.preflightLoading) {
+      return {
+        primaryLabel: "[ mint ]",
+        primaryDisabled: true,
+        primaryAction: "none",
+        status: "checking wallet",
+        secondaryLabel: "[ reset ]",
+        secondaryAction: "reset",
+      };
+    }
+
+    if (walletState.preflightError) {
+      return {
+        primaryLabel: "[ mint ]",
+        primaryDisabled: true,
+        primaryAction: "none",
+        status: "mint not ready",
+        secondaryLabel: "[ reset ]",
+        secondaryAction: "reset",
+      };
+    }
+
+    if (
+      walletState.mintPrice !== null &&
+      walletState.balance !== null &&
+      walletState.balance < walletState.mintPrice
+    ) {
+      return {
+        primaryLabel: "[ mint ]",
+        primaryDisabled: true,
+        primaryAction: "none",
+        status: "not enough eth",
+        secondaryLabel: "[ reset ]",
+        secondaryAction: "reset",
+      };
+    }
+
+    return {
+      primaryLabel: "[ mint ]",
+      primaryDisabled: false,
+      primaryAction: "mint",
+      status: "ready",
+      secondaryLabel: "[ reset ]",
+      secondaryAction: "reset",
+    };
   }
 
-  if (!walletState.detected || !walletState.address) {
-    return { label: "connect", disabled: false, action: "connect" };
+  if (runState === "run_failed") {
+    return {
+      primaryLabel: "[ retry ]",
+      primaryDisabled: !hasModelAccess(),
+      primaryAction: hasModelAccess() ? "retry_run" : "none",
+      status: "generation failed",
+      secondaryLabel: "",
+      secondaryAction: "none",
+    };
   }
 
-  if (walletState.chainId !== THOUGHT_CHAIN_ID) {
-    return { label: "switch", disabled: false, action: "switch" };
-  }
-
-  if (walletState.preflightLoading) {
-    return { label: "mint", disabled: true, action: "none" };
-  }
-
-  if (walletState.preflightError) {
-    return { label: "mint", disabled: true, action: "none" };
-  }
-
-  if (
-    walletState.mintPrice !== null &&
-    walletState.balance !== null &&
-    walletState.balance < walletState.mintPrice
-  ) {
-    return { label: "mint", disabled: true, action: "none" };
-  }
-
-  return { label: "mint", disabled: currentOutputText.length === 0, action: "mint" };
+  return {
+    primaryLabel: "[ run ]",
+    primaryDisabled: !hasModelAccess(),
+    primaryAction: hasModelAccess() ? "run" : "none",
+    status: hasModelAccess() ? "" : "model access needed",
+    secondaryLabel: "",
+    secondaryAction: "none",
+  };
 };
 
 const clearNoticeTimer = (timer: number | null) => {
@@ -649,15 +965,21 @@ const syncWalletMenu = () => {
   mintWalletDot.classList.add(`is-${getWalletDotState()}`);
 };
 
-const syncPrimaryCtaAvailability = () => {
-  if (ctaMode === "mint") {
-    const mintCta = getMintCtaState();
-    runAgentButton.disabled = runInFlight || mintCta.disabled;
-    return;
-  }
+const syncThoughtInstructionsControls = () => {
+  thoughtFileField.classList.toggle("is-hidden", !ENABLE_THOUGHT_UPLOAD);
+  thoughtFileStatus.textContent = `using ${getActiveThoughtInstructionsLabel()}.`;
+  syncThoughtInstructionsLink();
+  clearThoughtFileButton.classList.toggle(
+    "is-hidden",
+    !ENABLE_THOUGHT_UPLOAD || !thoughtInstructionsOverride,
+  );
+};
 
-  const blockedByLocal = sessionState.mode === "local" && sessionState.local.available === false;
-  runAgentButton.disabled = runInFlight || blockedByLocal;
+const syncPrimaryCtaAvailability = () => {
+  const action = getActionPresentation();
+  primaryActionState = action.primaryAction;
+  secondaryActionState = action.secondaryAction;
+  runAgentButton.disabled = action.primaryDisabled;
 };
 
 const refreshMintPreflight = async () => {
@@ -728,8 +1050,8 @@ const bindWalletProviderEvents = () => {
     return;
   }
 
-  const ethereum = getEthereumProvider();
-  if (!ethereum?.on) {
+  const providers = getInjectedProviders().filter((provider) => typeof provider.on === "function");
+  if (providers.length === 0) {
     return;
   }
 
@@ -739,8 +1061,10 @@ const bindWalletProviderEvents = () => {
     });
   };
 
-  ethereum.on("accountsChanged", handleWalletChange);
-  ethereum.on("chainChanged", handleWalletChange);
+  providers.forEach((provider) => {
+    provider.on?.("accountsChanged", handleWalletChange);
+    provider.on?.("chainChanged", handleWalletChange);
+  });
   walletListenersBound = true;
 };
 
@@ -753,17 +1077,50 @@ const requestWalletConnect = async () => {
   }
 
   setWarning("");
-  setStatus("open wallet...");
+  walletConnectInFlight = true;
+  syncInterface();
 
   try {
-    await ethereum.request({ method: "eth_requestAccounts" });
+    const existingAccount = extractPrimaryAccount(await ethereum.request({ method: "eth_accounts" }));
+
+    if (!existingAccount) {
+      let requestError: unknown = null;
+      const requestAccounts = ethereum
+        .request({ method: "eth_requestAccounts" })
+        .then((accounts) => extractPrimaryAccount(accounts))
+        .catch((error) => {
+          requestError = error;
+          return "";
+        });
+
+      const detectedAccount = await Promise.race([
+        requestAccounts,
+        waitForWalletAddress(ethereum),
+      ]);
+
+      if (!detectedAccount) {
+        const requestedAccount = await requestAccounts;
+        if (!requestedAccount && requestError) {
+          throw requestError;
+        }
+      }
+    }
+
     await refreshWalletState();
+
+    if (!walletState.address) {
+      throw new Error("wallet did not expose an account.");
+    }
+
     syncInterface();
     setStatus("wallet connected.", { flashMs: NOTICE_FLASH_MS });
   } catch (error) {
     const message = error instanceof Error ? error.message : "wallet connect failed.";
     setWarning(message);
-    setStatus("failed.");
+    setStatus("");
+  } finally {
+    walletConnectInFlight = false;
+    syncInterface();
   }
 };
 
@@ -776,7 +1133,7 @@ const switchWalletChain = async () => {
   }
 
   setWarning("");
-  setStatus("switching chain...");
+  setStatus("");
 
   try {
     await ethereum.request({
@@ -809,7 +1166,7 @@ const switchWalletChain = async () => {
     } else {
       const message = error instanceof Error ? error.message : "wallet switch failed.";
       setWarning(message);
-      setStatus("failed.");
+      setStatus("");
       return;
     }
   }
@@ -860,7 +1217,7 @@ const handleMint = async () => {
 
   if (!THOUGHT_TOKEN_ADDRESS) {
     setWarning("thought token is not deployed.");
-    setStatus("failed.");
+    setStatus("");
     return;
   }
 
@@ -875,13 +1232,13 @@ const handleMint = async () => {
     walletState.txError = "";
     syncInterface();
     setWarning("");
-    setStatus("Wallet open: Sign mint...");
+    setStatus("");
 
     const tx = await writableToken.mint(currentOutputText, { value: mintPrice });
     walletState.txState = "submitted";
     walletState.txHash = tx.hash;
     syncInterface();
-    setStatus("Minting pending...");
+    setStatus("");
 
     const receipt = await tx.wait();
     const mintedTokenId = extractMintedTokenId(receipt ?? { logs: [] });
@@ -901,49 +1258,44 @@ const handleMint = async () => {
     walletState.txError = error instanceof Error ? error.message : "mint failed.";
     syncInterface();
     setWarning(walletState.txError);
-    setStatus("failed.");
+    setStatus("");
   }
 };
 
-const handleMintAction = async () => {
-  const cta = getMintCtaState();
-
-  if (cta.action === "connect") {
-    await requestWalletConnect();
+const handleViewTx = async () => {
+  if (!walletState.txHash) {
     return;
   }
 
-  if (cta.action === "switch") {
-    await switchWalletChain();
+  if (THOUGHT_EXPLORER_BASE_URL) {
+    window.open(`${THOUGHT_EXPLORER_BASE_URL}/tx/${walletState.txHash}`, "_blank", "noopener,noreferrer");
     return;
   }
 
-  if (cta.action === "pending") {
-    await handlePendingTx();
-    return;
-  }
-
-  if (cta.action === "mint" || cta.action === "retry") {
-    await handleMint();
+  const copied = await copyToClipboard(walletState.txHash);
+  if (copied) {
+    setStatus("tx hash copied.", { flashMs: NOTICE_FLASH_MS });
   }
 };
 
 const syncCtaState = () => {
-  if (ctaMode === "mint") {
-    const mintCta = getMintCtaState();
-    runAgentButton.textContent = `[ ${mintCta.label} ]`;
-    mintWalletToggle.classList.remove("is-hidden");
-    resetThoughtButton.classList.remove("is-hidden");
-    syncWalletMenu();
-  } else {
-    runAgentButton.textContent = "[ run ]";
-    walletState.menuOpen = false;
-    mintWalletToggle.classList.add("is-hidden");
-    mintWalletMenu.classList.add("is-hidden");
-    resetThoughtButton.classList.add("is-hidden");
-  }
+  const action = getActionPresentation();
 
-  syncPrimaryCtaAvailability();
+  primaryActionState = action.primaryAction;
+  secondaryActionState = action.secondaryAction;
+  runAgentButton.textContent = action.primaryLabel;
+  runAgentButton.disabled = action.primaryDisabled;
+  runAgentButton.classList.toggle("is-hidden", !!action.hidePrimary);
+  actionStatusCopy.textContent = action.status;
+  actionStatusCopy.classList.toggle("is-hidden", action.status.length === 0);
+  resetThoughtButton.textContent = action.secondaryLabel;
+  resetThoughtButton.classList.toggle("is-hidden", action.secondaryAction === "none");
+  resetThoughtButton.setAttribute("aria-label", action.secondaryLabel.replace(/[\[\]]/g, "").trim() || "Secondary thought action");
+
+  walletState.menuOpen = false;
+  mintWalletToggle.classList.add("is-hidden");
+  mintWalletMenu.classList.add("is-hidden");
+  syncWalletMenu();
 };
 
 const readPx = (value: string) => Number.parseFloat(value) || 0;
@@ -1142,7 +1494,8 @@ const recordThoughtRun = (
 };
 
 const resetThought = () => {
-  ctaMode = "run";
+  runState = "idle";
+  walletConnectInFlight = false;
   currentOutputText = "";
   walletState.txState = "idle";
   walletState.txError = "";
@@ -1171,14 +1524,113 @@ const base64UrlEncode = (bytes: Uint8Array) => {
 
 const createCodeVerifier = () => {
   const bytes = new Uint8Array(32);
-  window.crypto.getRandomValues(bytes);
+  globalThis.crypto.getRandomValues(bytes);
   return base64UrlEncode(bytes);
+};
+
+const rotateRight = (value: number, shift: number) =>
+  (value >>> shift) | (value << (32 - shift));
+
+const sha256Fallback = (input: Uint8Array) => {
+  const constants = new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+    0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+    0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+    0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+    0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+    0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+    0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+    0xc67178f2,
+  ]);
+  const state = new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+    0x5be0cd19,
+  ]);
+  const bitLength = input.length * 8;
+  const paddingLength = ((56 - ((input.length + 1) % 64)) + 64) % 64;
+  const padded = new Uint8Array(input.length + 1 + paddingLength + 8);
+  const view = new DataView(padded.buffer);
+  const words = new Uint32Array(64);
+
+  padded.set(input);
+  padded[input.length] = 0x80;
+  view.setUint32(padded.length - 8, Math.floor(bitLength / 0x100000000), false);
+  view.setUint32(padded.length - 4, bitLength >>> 0, false);
+
+  for (let offset = 0; offset < padded.length; offset += 64) {
+    for (let index = 0; index < 16; index += 1) {
+      words[index] = view.getUint32(offset + index * 4, false);
+    }
+
+    for (let index = 16; index < 64; index += 1) {
+      const sigma0 =
+        rotateRight(words[index - 15], 7) ^
+        rotateRight(words[index - 15], 18) ^
+        (words[index - 15] >>> 3);
+      const sigma1 =
+        rotateRight(words[index - 2], 17) ^
+        rotateRight(words[index - 2], 19) ^
+        (words[index - 2] >>> 10);
+      words[index] = (words[index - 16] + sigma0 + words[index - 7] + sigma1) >>> 0;
+    }
+
+    let a = state[0];
+    let b = state[1];
+    let c = state[2];
+    let d = state[3];
+    let e = state[4];
+    let f = state[5];
+    let g = state[6];
+    let h = state[7];
+
+    for (let index = 0; index < 64; index += 1) {
+      const sum1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
+      const choice = (e & f) ^ (~e & g);
+      const temp1 = (h + sum1 + choice + constants[index] + words[index]) >>> 0;
+      const sum0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
+      const majority = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (sum0 + majority) >>> 0;
+
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) >>> 0;
+    }
+
+    state[0] = (state[0] + a) >>> 0;
+    state[1] = (state[1] + b) >>> 0;
+    state[2] = (state[2] + c) >>> 0;
+    state[3] = (state[3] + d) >>> 0;
+    state[4] = (state[4] + e) >>> 0;
+    state[5] = (state[5] + f) >>> 0;
+    state[6] = (state[6] + g) >>> 0;
+    state[7] = (state[7] + h) >>> 0;
+  }
+
+  const digest = new Uint8Array(32);
+  const digestView = new DataView(digest.buffer);
+  state.forEach((value, index) => {
+    digestView.setUint32(index * 4, value, false);
+  });
+  return digest;
 };
 
 const createCodeChallenge = async (verifier: string) => {
   const encoded = new TextEncoder().encode(verifier);
-  const digest = await window.crypto.subtle.digest("SHA-256", encoded);
-  return base64UrlEncode(new Uint8Array(digest));
+  const subtle = globalThis.crypto?.subtle;
+
+  if (subtle?.digest) {
+    const digest = await subtle.digest("SHA-256", encoded);
+    return base64UrlEncode(new Uint8Array(digest));
+  }
+
+  return base64UrlEncode(sha256Fallback(encoded));
 };
 
 const extractResponseText = (payload: unknown): string => {
@@ -1231,7 +1683,7 @@ const readErrorMessage = (payload: unknown, fallback: string): string => {
 };
 
 const buildOllamaPrompt = (prompt: string) =>
-  [thoughtInstructions.trim(), "", "User prompt:", prompt.trim(), "", "Response:"].join("\n");
+  [getActiveThoughtInstructions(), "", "User prompt:", prompt.trim(), "", "Response:"].join("\n");
 
 const requestOllama = async (model: string, prompt: string) => {
   let response: Response;
@@ -1284,7 +1736,7 @@ const requestOpenAIResponses = async (apiKey: string, model: string, prompt: str
     },
     body: JSON.stringify({
       model,
-      instructions: thoughtInstructions,
+      instructions: getActiveThoughtInstructions(),
       input: prompt,
       max_output_tokens: 160,
       store: false,
@@ -1311,7 +1763,7 @@ const requestAnthropicMessages = async (apiKey: string, model: string, prompt: s
     },
     body: JSON.stringify({
       model,
-      system: thoughtInstructions,
+      system: getActiveThoughtInstructions(),
       max_tokens: 160,
       messages: [{ role: "user", content: prompt }],
     }),
@@ -1346,7 +1798,7 @@ const requestOpenRouterChat = async (apiKey: string, model: string, prompt: stri
     body: JSON.stringify({
       model,
       messages: [
-        { role: "system", content: thoughtInstructions },
+        { role: "system", content: getActiveThoughtInstructions() },
         { role: "user", content: prompt },
       ],
     }),
@@ -1480,7 +1932,7 @@ const handleOpenRouterCallback = async () => {
     cleanOpenRouterCallbackUrl();
     syncInterface();
     setWarning("");
-    setStatus("connected via openrouter.", { flashMs: NOTICE_FLASH_MS });
+    setStatus("openrouter linked.", { flashMs: NOTICE_FLASH_MS });
     return true;
   } finally {
     connectOpenRouterButton.disabled = false;
@@ -1488,6 +1940,10 @@ const handleOpenRouterCallback = async () => {
 };
 
 const startOpenRouterConnect = async () => {
+  if (!isOpenRouterConnectSupported()) {
+    throw new Error(getOpenRouterConnectConstraintMessage());
+  }
+
   const verifier = createCodeVerifier();
   const challenge = await createCodeChallenge(verifier);
   const callbackUrl = `${window.location.origin}${window.location.pathname}`;
@@ -1677,6 +2133,15 @@ const setCurrentModelValue = (value: string) => {
 const getModelOptions = (sourceId: ModelSourceId) =>
   modelOptionsCache.get(sourceId) ?? STATIC_MODEL_OPTIONS[sourceId];
 
+const formatModelLabel = (label: string, maxLength = 28) => {
+  const trimmed = label.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, Math.max(0, maxLength - 3))}...`;
+};
+
 const syncManualModelField = () => {
   modelManualBox.classList.toggle("is-hidden", modelBox.value !== MANUAL_MODEL_VALUE);
 };
@@ -1700,7 +2165,9 @@ const setModelOptions = (
 
   modelBox.replaceChildren();
   modelOptions.forEach((option) => {
-    modelBox.append(new Option(option.label, option.id));
+    const renderedOption = new Option(formatModelLabel(option.label), option.id);
+    renderedOption.title = option.label;
+    modelBox.append(renderedOption);
   });
 
   if (allowManual) {
@@ -1718,6 +2185,8 @@ const setModelOptions = (
   syncManualModelField();
   modelBox.disabled = false;
   modelManualBox.disabled = !allowManual;
+  modelBox.title = resolvedModel;
+  modelManualBox.title = modelManualBox.value.trim();
   return allowManual && modelBox.value === MANUAL_MODEL_VALUE
     ? modelManualBox.value.trim()
     : modelBox.value.trim();
@@ -1726,7 +2195,9 @@ const setModelOptions = (
 const disableModelControls = (message: string) => {
   modelBox.replaceChildren(new Option(message, ""));
   modelBox.disabled = true;
+  modelBox.title = "";
   modelManualBox.value = "";
+  modelManualBox.title = "";
   modelManualBox.disabled = true;
   modelManualBox.classList.add("is-hidden");
 };
@@ -1746,11 +2217,20 @@ const getSelectedModelValue = () => {
 const syncConnectControls = () => {
   const isConnectMode = sessionState.mode === "connect";
   const hasCredential = sessionState.connect.apiKey.trim().length > 0;
+  const connectSupported = isOpenRouterConnectSupported();
 
   connectPanel.classList.toggle("is-hidden", !isConnectMode);
   connectOpenRouterButton.classList.toggle("is-hidden", hasCredential);
   connectStatusRow.classList.toggle("is-hidden", !hasCredential);
-  connectStatusCopy.textContent = "connected via openrouter";
+  connectStatusCopy.textContent = "openrouter linked";
+  connectOpenRouterButton.disabled = hasCredential ? false : !connectSupported;
+  connectOpenRouterButton.title = connectSupported ? "" : getOpenRouterConnectConstraintMessage();
+
+  if (!hasCredential) {
+    connectOpenRouterButton.textContent = connectSupported
+      ? "[ authorize openrouter ]"
+      : "[ openrouter connect unavailable ]";
+  }
 };
 
 const syncModeControls = () => {
@@ -1765,7 +2245,7 @@ const syncModeControls = () => {
   apiKeyField.classList.toggle("is-hidden", !isDirectMode);
   localEngineField.classList.toggle("is-hidden", !isLocalMode);
   localStatus.classList.toggle("is-hidden", !isLocalMode);
-  localHelper.classList.toggle("is-hidden", !isLocalMode);
+  localHelper.classList.add("is-hidden");
   syncConnectControls();
 };
 
@@ -1778,11 +2258,11 @@ const syncDirectControls = () => {
 
 const syncLocalControls = () => {
   if (sessionState.local.available === true) {
-    localStatus.textContent = "ollama detected";
+    localStatus.innerHTML = "ollama detected.<br />runs on this machine.<br />no cloud call.";
   } else if (sessionState.local.available === false) {
-    localStatus.textContent = "ollama not found";
+    localStatus.innerHTML = "ollama not found.<br />start ollama, then retry.";
   } else {
-    localStatus.textContent = "checking ollama...";
+    localStatus.innerHTML = "checking ollama...";
   }
 };
 
@@ -1818,6 +2298,7 @@ const syncInterface = () => {
   syncLocalControls();
   syncPromptField();
   syncModelControls();
+  syncThoughtInstructionsControls();
   syncCtaState();
   syncRunAvailability();
 };
@@ -1889,13 +2370,66 @@ const setMode = (mode: Mode) => {
     void refreshCurrentModels({ silent: true });
   }
 
-  setWarning("");
+  if (mode === "connect" && !sessionState.connect.apiKey.trim() && !isOpenRouterConnectSupported()) {
+    setWarning(getOpenRouterConnectConstraintMessage());
+  } else {
+    setWarning("");
+  }
+
   setStatus("");
 };
 
+const setThoughtInstructionsOverride = (override: ThoughtInstructionsOverride | null) => {
+  thoughtInstructionsOverride = ENABLE_THOUGHT_UPLOAD ? override : null;
+  writeThoughtInstructionsOverride();
+  syncThoughtInstructionsControls();
+};
+
+const handleThoughtFileSelection = async () => {
+  const file = thoughtFileInput.files?.[0];
+  thoughtFileInput.value = "";
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const content = await file.text();
+
+    if (!content.trim()) {
+      throw new Error("THOUGHT.md is empty.");
+    }
+
+    setThoughtInstructionsOverride({
+      name: file.name || "uploaded THOUGHT.md",
+      content,
+    });
+    setWarning("");
+    setStatus(`loaded ${file.name || "THOUGHT.md"}.`, { flashMs: NOTICE_FLASH_MS });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "THOUGHT.md upload failed.";
+    setWarning(message, { flashMs: NOTICE_FLASH_MS });
+    setStatus("failed.");
+  }
+};
+
 const runAgent = async () => {
-  if (ctaMode === "mint") {
-    await handleMintAction();
+  if (primaryActionState === "connect_wallet") {
+    await requestWalletConnect();
+    return;
+  }
+
+  if (primaryActionState === "switch_wallet") {
+    await switchWalletChain();
+    return;
+  }
+
+  if (primaryActionState === "mint" || primaryActionState === "retry_mint") {
+    await handleMint();
+    return;
+  }
+
+  if (primaryActionState === "none") {
     return;
   }
 
@@ -1933,9 +2467,10 @@ const runAgent = async () => {
   }
 
   setWarning("");
-  setStatus("running...");
+  setStatus("");
+  runState = "running";
   runInFlight = true;
-  syncRunAvailability();
+  syncInterface();
 
   try {
     let text = "";
@@ -1968,7 +2503,7 @@ const runAgent = async () => {
 
     recordThoughtRun(sessionState.mode, provider, model, prompt, text, normalizedText);
     setAgentOutput(text);
-    ctaMode = "mint";
+    runState = "output_ready";
     walletState.txState = "idle";
     walletState.txError = "";
     walletState.txHash = "";
@@ -1977,14 +2512,15 @@ const runAgent = async () => {
     void refreshWalletState().then(() => {
       syncInterface();
     });
-    setStatus("done.", { flashMs: NOTICE_FLASH_MS });
+    setStatus("");
   } catch (error) {
+    runState = "run_failed";
     const message = error instanceof Error ? error.message : "agent request failed.";
     setWarning(message);
-    setStatus("failed.");
+    setStatus("");
   } finally {
     runInFlight = false;
-    syncRunAvailability();
+    syncInterface();
   }
 };
 
@@ -2029,12 +2565,14 @@ modelBox.addEventListener("change", () => {
   }
 
   setCurrentModelValue(getSelectedModelValue());
+  modelBox.title = getSelectedModelValue();
   writeSessionState();
   setWarning("");
 });
 
 modelManualBox.addEventListener("input", () => {
   setCurrentModelValue(modelManualBox.value.trim());
+  modelManualBox.title = modelManualBox.value.trim();
   writeSessionState();
   setWarning("");
 });
@@ -2050,6 +2588,20 @@ promptBox.addEventListener("keydown", (event) => {
     event.preventDefault();
     void runAgent();
   }
+});
+
+uploadThoughtFileButton.addEventListener("click", () => {
+  thoughtFileInput.click();
+});
+
+thoughtFileInput.addEventListener("change", () => {
+  void handleThoughtFileSelection();
+});
+
+clearThoughtFileButton.addEventListener("click", () => {
+  setThoughtInstructionsOverride(null);
+  setWarning("");
+  setStatus("using bundled THOUGHT.md.", { flashMs: NOTICE_FLASH_MS });
 });
 
 connectOpenRouterButton.addEventListener("click", () => {
@@ -2070,7 +2622,7 @@ disconnectOpenRouterButton.addEventListener("click", () => {
 });
 
 mintWalletToggle.addEventListener("click", () => {
-  if (ctaMode !== "mint") {
+  if (mintWalletToggle.classList.contains("is-hidden")) {
     return;
   }
 
@@ -2107,7 +2659,14 @@ runAgentButton.addEventListener("click", () => {
 });
 
 resetThoughtButton.addEventListener("click", () => {
-  resetThought();
+  if (secondaryActionState === "reset") {
+    resetThought();
+    return;
+  }
+
+  if (secondaryActionState === "view_tx") {
+    void handleViewTx();
+  }
 });
 
 const handleViewportResize = () => {
@@ -2116,6 +2675,7 @@ const handleViewportResize = () => {
 
 window.addEventListener("resize", handleViewportResize);
 window.visualViewport?.addEventListener("resize", handleViewportResize);
+window.addEventListener("beforeunload", revokeThoughtInstructionsObjectUrl);
 document.addEventListener("mousedown", (event) => {
   if (!walletState.menuOpen) {
     return;
