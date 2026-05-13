@@ -19,7 +19,7 @@
 - Canonical text hashes are globally unique; the same canonical text cannot mint twice even with different provenance.
 - `ThoughtSpecRegistry` is the source of truth for valid THOUGHT.md spec ids and spec bytes.
 - `ThoughtNFT.activeSpecMeta()` must reflect the active registry-backed `THOUGHT.v1.md` metadata.
-- Color Font v1 ABI must remain stable: id, version, 26 glyphs, glyph lookup, data string, and hash.
+- Color Font v1 is a standalone immutable contract dependency. ABI must remain stable: id, version, 26 glyphs, glyph lookup, data string, and hash.
 - `tokenURI` must remain marketplace-compatible: ERC721 metadata interface, data URL JSON, embedded SVG image, path id, prompt hash, provenance hash, spec id, and provenance payload.
 - PATH movement setup must be frozen by deployment scripts after configuring `THOUGHT` movement quota.
 

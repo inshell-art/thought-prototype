@@ -1,7 +1,5 @@
 # THOUGHT EVM Contracts
 
-This port is a transitional checkpoint. Keep it runnable, but treat it as deprecated once the planned near-greenfield refactor begins.
-
 This directory contains the Ethereum/Foundry port of the THOUGHT contracts.
 
 ## Contracts
@@ -34,3 +32,41 @@ This directory contains the Ethereum/Foundry port of the THOUGHT contracts.
 - The deploy script should configure PATH `THOUGHT` movement quota to `1` and freeze that movement before public use.
 - Token metadata is on-chain JSON with embedded SVG image data and provenance fields.
 - Color Font v1 is exposed through the standalone `ColorFontV1` contract ABI. `ThoughtNFT` also forwards read helpers to the pinned Color Font contract for compatibility.
+
+## Sepolia Readiness Contract
+
+Constructor params:
+
+- `pathNft`: deployed `PathNFT` address. It must contain the `THOUGHT` movement config pointing at the deployed `ThoughtNFT`.
+- `thoughtSpecRegistry`: deployed `ThoughtSpecRegistry` address with active `THOUGHT.v1.md`.
+- `colorFont`: deployed standalone `ColorFontV1` address. `ThoughtNFT` verifies its id, version, and hash in the constructor.
+
+Authorization and freeze assumptions:
+
+- `ThoughtNFT` has no owner and no post-deploy admin path.
+- `ThoughtSpecRegistry` is owner-managed by its deployer. Register the launch `THOUGHT.v1.md` spec before public minting.
+- PATH admin configures `PathNFT.setMovementConfig(bytes32("THOUGHT"), thoughtNft, quota)` and freezes it before public use.
+- The launch quota for THOUGHT movement is currently `1` per PATH token unless a later movement policy explicitly changes it.
+
+PATH consumption flow:
+
+1. User owns or is approved for the PATH token.
+2. User signs the PATH `ConsumeAuthorization` payload for movement `THOUGHT`, executor `ThoughtNFT`, nonce, and deadline.
+3. User calls `ThoughtNFT.mint(...)` with canonical text, provenance, PATH id, spec id, deadline, and PATH signature.
+4. `ThoughtNFT` validates spec registration, canonical text, uniqueness, and provenance size before touching PATH.
+5. `ThoughtNFT` calls `PathNFT.consumeUnit(pathId, THOUGHT, msg.sender, deadline, signature)`.
+6. `PathNFT` verifies signature/owner/approval/minter/quota/order, consumes one unit, emits `MetadataUpdate` and `MovementConsumed`, and returns the movement serial.
+7. `ThoughtNFT` records the PATH id and serial, mints the THOUGHT NFT, and emits `PathThoughtConsumed` and `ThoughtMinted`.
+
+Irreversible actions:
+
+- A successful THOUGHT mint permanently consumes one PATH `THOUGHT` movement unit.
+- Canonical text hashes are globally unique and cannot be reminted.
+- Registered spec bytes are stored in immutable contract code pointers; the registry can add/set active specs only through its owner.
+- Color Font v1 data is contract-defined and immutable for the deployed `ColorFontV1`.
+
+Metadata and indexer expectations:
+
+- `ThoughtMinted` is the canonical mint event.
+- `PathThoughtConsumed` links a THOUGHT token to PATH consumption.
+- `tokenURI` returns marketplace-shaped JSON with embedded SVG, PATH id, PATH serial, text hash, prompt hash, provenance hash, spec id, spec ref/hash, color font id/version/hash, and provenance payload.
