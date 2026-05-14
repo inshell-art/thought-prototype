@@ -137,6 +137,9 @@ type EvmAddresses = {
   rpcUrl?: string;
   chainId?: number;
   explorerUrl?: string;
+  recommendedThoughtSpecName?: string;
+  recommendedThoughtSpecId?: string;
+  recommendedThoughtSpecHash?: string;
   pathNft?: {
     address?: string;
   };
@@ -146,6 +149,20 @@ type EvmAddresses = {
   thoughtNft?: {
     address?: string;
   };
+  thoughtSpec?: {
+    specName?: string;
+    id?: string;
+    hash?: string;
+    ref?: string;
+  };
+  thoughtSpecs?: Array<{
+    specName?: string;
+    specId?: string;
+    specHash?: string;
+    ref?: string;
+    pointer?: string;
+    byteLength?: number;
+  }>;
   colorFontV1?: {
     address?: string;
   };
@@ -311,6 +328,7 @@ type MintFlowData = {
   textHash: string;
   promptHash: string;
   thoughtSpecId: string;
+  thoughtSpecHash: string;
   provenanceJson: string;
   existingTokenId: number | null;
   pathIdInput: string;
@@ -352,6 +370,7 @@ type ThoughtNFTMetadata = {
     promptHash?: string;
     provenanceHash?: string;
     thoughtSpecId?: string;
+    thoughtSpecHash?: string;
     pathId?: string | number;
     minter?: string;
     mintedAt?: string | number;
@@ -371,6 +390,7 @@ type GalleryThought = {
   promptHash: string;
   provenanceHash: string;
   thoughtSpecId: string;
+  thoughtSpecHash: string;
   mintedAt: number | null;
   rawText: string;
   prompt: string;
@@ -603,6 +623,12 @@ const OPENROUTER_PREFERRED_MODELS = [
 const EVM_ADDRESSES = addresses as EvmAddresses;
 const THOUGHT_CHAIN_ID = EVM_ADDRESSES.chainId ?? 31337;
 const THOUGHT_CHAIN_ID_HEX = `0x${THOUGHT_CHAIN_ID.toString(16)}`;
+const ZERO_BYTES32 = `0x${"0".repeat(64)}`;
+const RECOMMENDED_THOUGHT_SPEC_ID =
+  EVM_ADDRESSES.recommendedThoughtSpecId?.trim() ||
+  EVM_ADDRESSES.thoughtSpec?.id?.trim() ||
+  EVM_ADDRESSES.thoughtSpecs?.[0]?.specId?.trim() ||
+  "";
 const LOCAL_BROWSER_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 const resolveThoughtRpcUrl = () => {
   const envRpcUrl =
@@ -671,7 +697,7 @@ const ROUTE_THOUGHT_NFT_ID = /^[1-9]\d*$/.test(RAW_ROUTE_THOUGHT_NFT_ID)
 const GALLERY_TARGET_TOKEN_ID = IS_GALLERY_PAGE ? ROUTE_THOUGHT_NFT_ID : null;
 const IS_THOUGHT_PAGE = !IS_COLOR_FONT_PAGE && !IS_GALLERY_PAGE && ROUTE_THOUGHT_NFT_ID !== null;
 const THOUGHT_MINTED_TOPIC = id(
-  "ThoughtMinted(uint256,address,uint256,bytes32,bytes32,bytes32,uint64)",
+  "ThoughtMinted(uint256,address,uint256,bytes32,bytes32,bytes32,bytes32,uint64)",
 );
 const TOKEN_URI_CALL_GAS_LIMIT = 100_000_000n;
 const THOUGHT_NFT_ABI = [
@@ -681,8 +707,8 @@ const THOUGHT_NFT_ABI = [
   "error ProvenanceTooLarge(uint256 size, uint256 max)",
   "error ThoughtAlreadyMinted(bytes32 textHash, uint256 tokenId)",
   "error ThoughtTextTooLarge(uint256 actual, uint256 max)",
-  "error UnknownThoughtSpec(bytes32 thoughtSpecId)",
-  "function mint(string rawText, uint256 pathId, bytes32 thoughtSpecId, bytes32 promptHash, string provenanceJson, uint256 deadline, bytes pathSignature) returns (uint256)",
+  "error InvalidThoughtSpecPair(bytes32 thoughtSpecId, bytes32 thoughtSpecHash)",
+  "function mint(string rawText, uint256 pathId, bytes32 thoughtSpecId, bytes32 thoughtSpecHash, bytes32 promptHash, string provenanceJson, uint256 deadline, bytes pathSignature) returns (uint256)",
   "function previewText(string input) pure returns (string normalized, bool valid, uint8 reasonCode)",
   "function previewWork(string rawReturn) pure returns (bool ok, string text, string svg, uint8 reasonCode)",
   "function renderThoughtSvg(string canonicalText) pure returns (string)",
@@ -691,7 +717,8 @@ const THOUGHT_NFT_ABI = [
   "function tokenURI(uint256 tokenId) view returns (string)",
   "function rawTextOf(uint256 tokenId) view returns (string)",
   "function provenanceOf(uint256 tokenId) view returns (string)",
-  "function recordOf(uint256 tokenId) view returns (bytes32 textHash, bytes32 promptHash, bytes32 provenanceHash, bytes32 thoughtSpecId, uint256 pathId, address minter, uint64 mintedAt)",
+  "function recordOf(uint256 tokenId) view returns (bytes32 textHash, bytes32 promptHash, bytes32 provenanceHash, bytes32 thoughtSpecId, bytes32 thoughtSpecHash, uint256 pathId, address minter, uint64 mintedAt)",
+  "function thoughtSpecOf(uint256 tokenId) view returns (bytes32 specId, bytes32 specHash, string specName, string ref)",
   "function totalSupply() view returns (uint256)",
   "function thoughtText(uint256 tokenId) view returns (string)",
   "function authorOf(uint256 tokenId) view returns (address)",
@@ -703,7 +730,7 @@ const THOUGHT_NFT_ABI = [
   "function colorFontHash() view returns (bytes32)",
   "function colorFontGlyph(uint8 index) view returns (string letter, uint8 ordinal, string aliasTerm, string hexColor)",
   "function colorFontGlyphOf(bytes1 letter) view returns (uint8 ordinal, string aliasTerm, string hexColor)",
-  "event ThoughtMinted(uint256 indexed tokenId, address indexed minter, uint256 indexed pathId, bytes32 textHash, bytes32 provenanceHash, bytes32 thoughtSpecId, uint64 mintedAt)",
+  "event ThoughtMinted(uint256 indexed tokenId, address indexed minter, uint256 indexed pathId, bytes32 textHash, bytes32 provenanceHash, bytes32 thoughtSpecId, bytes32 thoughtSpecHash, uint64 mintedAt)",
 ] as const;
 const COLOR_FONT_V1_ABI = [
   "function id() pure returns (string)",
@@ -723,11 +750,11 @@ const PATH_NFT_ABI = [
   "function ownerOf(uint256 tokenId) view returns (address)",
 ] as const;
 const THOUGHT_SPEC_REGISTRY_ABI = [
-  "function activeSpecMeta() view returns (bytes32 specId, bytes32 specHash, string ref, address pointer, uint32 byteLength, uint64 registeredAt, bool exists)",
-  "function activeSpecText() view returns (string)",
-  "function specMeta(bytes32 specId) view returns (bytes32 specHash, string ref, address pointer, uint32 byteLength, uint64 registeredAt, bool exists)",
-  "function specText(bytes32 specId) view returns (string)",
-  "function validateSpec(bytes32 specId) view returns (bool)",
+  "function latestThoughtSpecId() view returns (bytes32)",
+  "function thoughtSpecMeta(bytes32 specId) view returns (bool exists, string specName, bytes32 specHash, string ref, address pointer, uint32 byteLength, uint64 registeredAt)",
+  "function thoughtSpecText(bytes32 specId) view returns (string)",
+  "function validateThoughtSpec(bytes32 specId, bytes32 specHash) view returns (bool)",
+  "function isRegisteredThoughtSpec(bytes32 specId, bytes32 specHash) view returns (bool)",
 ] as const;
 const EVM_ABI_CODER = AbiCoder.defaultAbiCoder();
 
@@ -1209,6 +1236,7 @@ const mintFlowData: MintFlowData = {
   textHash: "",
   promptHash: "",
   thoughtSpecId: "",
+  thoughtSpecHash: "",
   provenanceJson: "",
   existingTokenId: null,
   pathIdInput: "",
@@ -2269,7 +2297,7 @@ const thoughtSpecCachePayload = (spec: ActiveThoughtSpec) => ({
   cacheKey: getThoughtSpecCacheKey(spec.specId, spec.specHash),
   source: {
     contract: "ThoughtSpecRegistry",
-    read: "specText(bytes32)",
+    read: "thoughtSpecText(bytes32)",
   },
   specId: spec.specId,
   specHash: spec.specHash,
@@ -2325,42 +2353,56 @@ const clearThoughtDetailProvenanceJsonLink = (text = "provenance unavailable.") 
   thoughtDetailProvenanceBytes.title = "Provenance bytes unavailable.";
 };
 
+const resolveRecommendedThoughtSpecId = async (registry: Contract) => {
+  if (RECOMMENDED_THOUGHT_SPEC_ID && RECOMMENDED_THOUGHT_SPEC_ID !== ZERO_BYTES32) {
+    return RECOMMENDED_THOUGHT_SPEC_ID;
+  }
+
+  const latest = await withTimeout(
+    registry.latestThoughtSpecId() as Promise<string>,
+    PREFLIGHT_REQUEST_TIMEOUT_MS,
+    "THOUGHT.md request timed out.",
+  );
+  if (!latest || latest === ZERO_BYTES32) {
+    throw new Error("spec unavailable.");
+  }
+  return latest;
+};
+
+const loadThoughtSpecMeta = async (registry: Contract, specId: string) => {
+  const [exists, specName, specHash, ref, pointer, byteLength_] = (await withTimeout(
+    registry.thoughtSpecMeta(specId) as Promise<unknown>,
+    PREFLIGHT_REQUEST_TIMEOUT_MS,
+    "THOUGHT.md request timed out.",
+  )) as [boolean, string, string, string, string, bigint, bigint];
+
+  if (!exists || !specId || specId === ZERO_BYTES32) {
+    throw new Error("spec unavailable.");
+  }
+
+  return {
+    specId,
+    specHash,
+    ref: ref || specName || "THOUGHT.md",
+    pointer,
+    byteLength: Number(byteLength_),
+  };
+};
+
 const loadActiveThoughtSpec = async () => {
   const registry = getReadThoughtSpecRegistry();
   if (!registry) {
     throw new Error("spec unavailable.");
   }
 
-  const [specId, specHash, ref, pointer, byteLength_,, exists] = (await withTimeout(
-    registry.activeSpecMeta() as Promise<unknown>,
-    PREFLIGHT_REQUEST_TIMEOUT_MS,
-    "THOUGHT.md request timed out.",
-  )) as [
-    string,
-    string,
-    string,
-    string,
-    bigint,
-    bigint,
-    boolean,
-  ];
-  const meta = {
-    specId,
-    specHash,
-    ref,
-    pointer,
-    byteLength: Number(byteLength_),
-  };
-
-  if (!exists || specId === "0x0000000000000000000000000000000000000000000000000000000000000000") {
-    throw new Error("spec unavailable.");
-  }
+  const specId = await resolveRecommendedThoughtSpecId(registry);
+  const meta = await loadThoughtSpecMeta(registry, specId);
 
   const cached = readCachedThoughtSpec(meta);
   if (
     cached &&
     await withTimeout(
-      registry.validateSpec(specId) as Promise<boolean>,
+      registry.validateThoughtSpec(specId, meta.specHash) as Promise<boolean>,
       PREFLIGHT_REQUEST_TIMEOUT_MS,
       "THOUGHT.md request timed out.",
     )
@@ -2370,12 +2412,12 @@ const loadActiveThoughtSpec = async () => {
 
   const [validSpec, text] = await Promise.all([
     withTimeout(
-      registry.validateSpec(specId) as Promise<boolean>,
+      registry.validateThoughtSpec(specId, meta.specHash) as Promise<boolean>,
       PREFLIGHT_REQUEST_TIMEOUT_MS,
       "THOUGHT.md request timed out.",
     ),
     withTimeout(
-      registry.activeSpecText() as Promise<string>,
+      registry.thoughtSpecText(specId) as Promise<string>,
       PREFLIGHT_REQUEST_TIMEOUT_MS,
       "THOUGHT.md request timed out.",
     ),
@@ -2383,7 +2425,7 @@ const loadActiveThoughtSpec = async () => {
   if (!validSpec) {
     throw new Error("spec mismatch.");
   }
-  if (byteLength(text) !== meta.byteLength || hashText(text).toLowerCase() !== specHash.toLowerCase()) {
+  if (byteLength(text) !== meta.byteLength || hashText(text).toLowerCase() !== meta.specHash.toLowerCase()) {
     throw new Error("spec mismatch.");
   }
 
@@ -2402,23 +2444,7 @@ const loadThoughtSpecById = async (specId: string) => {
     throw new Error("spec unavailable.");
   }
 
-  const [specHash, ref, pointer, byteLength_,, exists] = (await withTimeout(
-    registry.specMeta(specId) as Promise<unknown>,
-    PREFLIGHT_REQUEST_TIMEOUT_MS,
-    "THOUGHT.md request timed out.",
-  )) as [string, string, string, bigint, bigint, boolean];
-
-  if (!exists) {
-    throw new Error("spec unavailable.");
-  }
-
-  const meta = {
-    specId,
-    specHash,
-    ref,
-    pointer,
-    byteLength: Number(byteLength_),
-  };
+  const meta = await loadThoughtSpecMeta(registry, specId);
   const cached = readCachedThoughtSpec(meta);
   if (cached) {
     return cached;
@@ -2426,17 +2452,17 @@ const loadThoughtSpecById = async (specId: string) => {
 
   const [validSpec, text] = await Promise.all([
     withTimeout(
-      registry.validateSpec(specId) as Promise<boolean>,
+      registry.validateThoughtSpec(specId, meta.specHash) as Promise<boolean>,
       PREFLIGHT_REQUEST_TIMEOUT_MS,
       "THOUGHT.md request timed out.",
     ),
     withTimeout(
-      registry.specText(specId) as Promise<string>,
+      registry.thoughtSpecText(specId) as Promise<string>,
       PREFLIGHT_REQUEST_TIMEOUT_MS,
       "THOUGHT.md request timed out.",
     ),
   ]);
-  if (!validSpec || byteLength(text) !== meta.byteLength || hashText(text).toLowerCase() !== specHash.toLowerCase()) {
+  if (!validSpec || byteLength(text) !== meta.byteLength || hashText(text).toLowerCase() !== meta.specHash.toLowerCase()) {
     throw new Error("spec mismatch.");
   }
 
@@ -2698,15 +2724,10 @@ const verifyThoughtSpecAnchor = async () => {
     return false;
   }
 
-  const [specHash,,,,, exists] = (await registry.specMeta(activeThoughtSpec.specId)) as [
-    string,
-    string,
-    string,
-    bigint,
-    bigint,
-    boolean,
-  ];
-  return exists && specHash.toLowerCase() === activeThoughtSpec.specHash.toLowerCase();
+  return Boolean(await registry.isRegisteredThoughtSpec(
+    activeThoughtSpec.specId,
+    activeThoughtSpec.specHash,
+  ));
 };
 
 const clearMintAuthorization = () => {
@@ -2721,6 +2742,7 @@ const resetMintFlow = () => {
   mintFlowData.textHash = "";
   mintFlowData.promptHash = "";
   mintFlowData.thoughtSpecId = "";
+  mintFlowData.thoughtSpecHash = "";
   mintFlowData.provenanceJson = "";
   mintFlowData.existingTokenId = null;
   mintFlowData.pathIdInput = "";
@@ -3746,6 +3768,7 @@ const openMintSheet = async (uiMode: MintFlowUiMode = "sheet") => {
   }
 
   mintFlowData.thoughtSpecId = spec.specId;
+  mintFlowData.thoughtSpecHash = spec.specHash;
   const provenanceJson = buildProvenanceJson(mintFlowData.textHash);
   const provenanceBytes = byteLength(provenanceJson);
   if (provenanceBytes > MAX_PROVENANCE_BYTES) {
@@ -4207,6 +4230,7 @@ const rebuildFinalMintProvenance = async () => {
 
   const spec = await ensureActiveThoughtSpec();
   mintFlowData.thoughtSpecId = spec.specId;
+  mintFlowData.thoughtSpecHash = spec.specHash;
   if (!mintFlowData.textHash) {
     mintFlowData.textHash = await textHashFromContract(mintFlowData.rawText);
   }
@@ -4232,6 +4256,7 @@ const confirmMint = async (options?: { appendCliResult?: boolean }) => {
     mintFlowData.pathId === null ||
     !mintFlowData.provenanceJson ||
     !mintFlowData.thoughtSpecId ||
+    !mintFlowData.thoughtSpecHash ||
     !mintFlowData.deadline ||
     !mintFlowData.signature
   ) {
@@ -4270,6 +4295,7 @@ const confirmMint = async (options?: { appendCliResult?: boolean }) => {
       mintFlowData.rawText,
       mintFlowData.pathId,
       mintFlowData.thoughtSpecId,
+      mintFlowData.thoughtSpecHash,
       mintFlowData.promptHash,
       mintFlowData.provenanceJson,
       mintFlowData.deadline,
@@ -4616,7 +4642,7 @@ const parseThoughtDetailSpec = (thought: GalleryThought): ThoughtDetailSpec => {
   const fallback = {
     id: thought.thoughtSpecId,
     ref: "THOUGHT.v1.md",
-    hash: thought.thoughtSpecId,
+    hash: thought.thoughtSpecHash,
     text: "",
   };
 
@@ -4957,7 +4983,8 @@ const readGalleryThoughts = async (): Promise<GalleryThought[] | null> => {
         const textHash = String(parsed.args[3]);
         const provenanceHash = String(parsed.args[4]);
         const thoughtSpecId = String(parsed.args[5]);
-        const eventMintedAt = Number(parsed.args[6] as bigint);
+        const thoughtSpecHash = String(parsed.args[6]);
+        const eventMintedAt = Number(parsed.args[7] as bigint);
         let tokenUri = "";
         let metadata: ThoughtNFTMetadata = {};
         let tokenImage = "";
@@ -4997,6 +5024,7 @@ const readGalleryThoughts = async (): Promise<GalleryThought[] | null> => {
           promptHash: metadataString(properties.promptHash) || provenanceMaterial.promptHash,
           provenanceHash: metadataString(properties.provenanceHash) || provenanceHash,
           thoughtSpecId: metadataString(properties.thoughtSpecId) || thoughtSpecId,
+          thoughtSpecHash: metadataString(properties.thoughtSpecHash) || thoughtSpecHash,
           mintedAt: metadataNumber(properties.mintedAt) ?? eventMintedAt,
           rawText,
           prompt: provenanceMaterial.prompt,
