@@ -2,7 +2,7 @@
   "rpcUrl": "http://127.0.0.1:8545",
   "chainId": 31337,
   "pathNft": {
-    "address": "0xdB05A386810c809aD5a77422eb189D36c7f24402"
+    "address": "0x25C0a2F0A077F537Bd11897F04946794c2f6f1Ef"
   },
   "pathMovement": {
     "name": "THOUGHT",
@@ -19,37 +19,37 @@
     "owner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
   },
   "seedGenerator": {
-    "address": "0x7A28cf37763279F774916b85b5ef8b64AB421f79"
+    "address": "0x906B067e392e2c5f9E4f101f36C0b8CdA4885EBf"
   },
   "colorFontV1": {
-    "address": "0x2BB8B93F585B43b06F3d523bf30C203d3B6d4BD4"
+    "address": "0xD94A92749C0bb33c4e4bA7980c6dAD0e3eFfb720"
   },
   "thoughtPreviewer": {
-    "address": "0xB7ca895F81F20e05A5eb11B05Cbaab3DAe5e23cd"
+    "address": "0xDf951d2061b12922BFbF22cb17B17f3b39183570"
   },
   "thoughtSpecRegistry": {
-    "address": "0xd0EC100F1252a53322051a95CF05c32f0C174354"
+    "address": "0x4f42528B7bF8Da96516bECb22c1c6f53a8Ac7312"
   },
   "thoughtSpecs": [
     {
       "specName": "THOUGHT.v1.md",
       "specId": "0xe201170ae183f114064f4492cbc4942f7d3d68b74a08d3dc4b4f61edec213d78",
-      "specHash": "0xdd1846d441f7eb34a2695857525d555888596679aebd826161efccffcbe9ff50",
+      "specHash": "0x1abb9da7ba36102726375510e66afe255f8c6e0d771b4c3b90c5d22a9b8eb909",
       "ref": "THOUGHT.v1.md",
-      "pointer": "0xF97E38E349d57705FE369Cf30c5D5508a0264041",
-      "byteLength": 8545
+      "pointer": "0x63e6832bd328c5Dc18E94A6565b30B653D3475F1",
+      "byteLength": 8549
     }
   ],
   "recommendedThoughtSpecName": "THOUGHT.v1.md",
   "recommendedThoughtSpecId": "0xe201170ae183f114064f4492cbc4942f7d3d68b74a08d3dc4b4f61edec213d78",
-  "recommendedThoughtSpecHash": "0xdd1846d441f7eb34a2695857525d555888596679aebd826161efccffcbe9ff50",
+  "recommendedThoughtSpecHash": "0x1abb9da7ba36102726375510e66afe255f8c6e0d771b4c3b90c5d22a9b8eb909",
   "thoughtSpec": {
     "specName": "THOUGHT.v1.md",
     "id": "0xe201170ae183f114064f4492cbc4942f7d3d68b74a08d3dc4b4f61edec213d78",
-    "hash": "0xdd1846d441f7eb34a2695857525d555888596679aebd826161efccffcbe9ff50",
+    "hash": "0x1abb9da7ba36102726375510e66afe255f8c6e0d771b4c3b90c5d22a9b8eb909",
     "ref": "THOUGHT.v1.md"
   },
   "thoughtNft": {
-    "address": "0xCa57C1d3c2c35E667745448Fef8407dd25487ff8"
+    "address": "0xe14058B1c3def306e2cb37535647A04De03Db092"
   }
 }
