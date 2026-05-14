@@ -120,6 +120,7 @@ contract ThoughtNFTTest {
     bytes32 private constant DEFAULT_SPEC_HASH = keccak256("THOUGHT.md fixture");
     string private constant DEFAULT_SPEC_REF = "THOUGHT.v1.md";
     string private constant DEFAULT_SPEC_TEXT = "THOUGHT.md fixture";
+    string private constant DEFAULT_SPEC_NAME = "THOUGHT.v1.md";
     bytes32 private constant DEFAULT_PROMPT_HASH = keccak256("why we are here?");
     bytes32 private constant CONSUME_AUTHORIZATION_TYPEHASH = keccak256(
         "ConsumeAuthorization(address pathNft,uint256 chainId,uint256 pathId,bytes32 movement,address claimer,address executor,uint256 nonce,uint256 deadline)"
@@ -132,6 +133,7 @@ contract ThoughtNFTTest {
         bytes32 textHash,
         bytes32 provenanceHash,
         bytes32 thoughtSpecId,
+        bytes32 thoughtSpecHash,
         uint64 mintedAt
     );
 
@@ -146,7 +148,10 @@ contract ThoughtNFTTest {
         path = new MockPathNFT();
         colorFont = new ColorFontV1();
         registry = new ThoughtSpecRegistry();
-        registry.registerSpec(DEFAULT_SPEC_ID, DEFAULT_SPEC_REF, bytes(DEFAULT_SPEC_TEXT), true);
+        (bytes32 specId, bytes32 specHash,) =
+            registry.registerThoughtSpec(DEFAULT_SPEC_NAME, DEFAULT_SPEC_REF, bytes(DEFAULT_SPEC_TEXT));
+        require(specId == DEFAULT_SPEC_ID, "fixture spec id mismatch");
+        require(specHash == DEFAULT_SPEC_HASH, "fixture spec hash mismatch");
         token = new ThoughtNFT(address(path), address(registry), address(colorFont));
         path.setAuthorizedMinter(address(token));
         for (uint256 pathId = 1; pathId <= 32; pathId++) {
@@ -156,40 +161,33 @@ contract ThoughtNFTTest {
 
     function testDefaultThoughtSpecIsRegistered() public view {
         (
-            bytes32 activeSpecId,
+            bool exists,
+            string memory specName,
             bytes32 hash,
             string memory ref,
             address pointer,
             uint32 byteLength,
-            uint64 registeredAt,
-            bool exists
-        ) = registry.activeSpecMeta();
+            uint64 registeredAt
+        ) = registry.thoughtSpecMeta(DEFAULT_SPEC_ID);
 
         require(exists, "spec should exist");
-        require(activeSpecId == DEFAULT_SPEC_ID, "active spec id mismatch");
+        require(_equal(specName, DEFAULT_SPEC_NAME), "spec name mismatch");
         require(hash == DEFAULT_SPEC_HASH, "spec hash mismatch");
         require(_equal(ref, DEFAULT_SPEC_REF), "spec ref mismatch");
         require(pointer != address(0), "spec pointer missing");
         require(byteLength == bytes(DEFAULT_SPEC_TEXT).length, "spec byte length mismatch");
         require(registeredAt == uint64(block.timestamp), "spec registeredAt mismatch");
-        require(registry.validateSpec(DEFAULT_SPEC_ID), "spec validation failed");
-        require(_equal(registry.specText(DEFAULT_SPEC_ID), DEFAULT_SPEC_TEXT), "spec text mismatch");
+        require(registry.thoughtSpecIdOfName(DEFAULT_SPEC_NAME) == DEFAULT_SPEC_ID, "spec id helper mismatch");
+        require(registry.thoughtSpecExists(DEFAULT_SPEC_ID), "spec exists helper mismatch");
+        require(registry.isRegisteredThoughtSpec(DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH), "pair should be registered");
+        require(!registry.isRegisteredThoughtSpec(DEFAULT_SPEC_ID, bytes32(uint256(1))), "wrong hash should fail");
+        require(registry.validateThoughtSpec(DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH), "spec validation failed");
+        require(_equal(registry.thoughtSpecText(DEFAULT_SPEC_ID), DEFAULT_SPEC_TEXT), "spec text mismatch");
+        require(_bytesEqual(registry.thoughtSpecBytes(DEFAULT_SPEC_ID), bytes(DEFAULT_SPEC_TEXT)), "spec bytes mismatch");
+        require(registry.thoughtSpecCount() == 1, "spec count mismatch");
+        require(registry.thoughtSpecIdAt(0) == DEFAULT_SPEC_ID, "spec index mismatch");
+        require(registry.latestThoughtSpecId() == DEFAULT_SPEC_ID, "latest helper mismatch");
         require(token.thoughtSpecRegistry() == address(registry), "token registry mismatch");
-
-        (
-            bytes32 tokenSpecId,
-            bytes32 tokenSpecHash,
-            string memory tokenSpecRef,
-            address tokenSpecPointer,
-            uint32 tokenSpecByteLength,,
-            bool tokenSpecExists
-        ) = token.activeSpecMeta();
-        require(tokenSpecExists, "token active spec should exist");
-        require(tokenSpecId == DEFAULT_SPEC_ID, "token active spec id mismatch");
-        require(tokenSpecHash == DEFAULT_SPEC_HASH, "token active spec hash mismatch");
-        require(_equal(tokenSpecRef, DEFAULT_SPEC_REF), "token active spec ref mismatch");
-        require(tokenSpecPointer == pointer, "token active spec pointer mismatch");
-        require(tokenSpecByteLength == byteLength, "token active spec byte length mismatch");
     }
 
     function testConstructorPinsDependenciesAndRejectsInvalidTargets() public {
@@ -240,49 +238,87 @@ contract ThoughtNFTTest {
         require(!token.supportsInterface(0xffffffff), "invalid interface should be false");
     }
 
-    function testRegisterSameThoughtSpecIdReverts() public {
+    function testRegisterSameThoughtSpecNameReverts() public {
         (bool ok,) = address(registry)
             .call(
                 abi.encodeWithSelector(
-                    registry.registerSpec.selector, DEFAULT_SPEC_ID, DEFAULT_SPEC_REF, bytes(DEFAULT_SPEC_TEXT), false
+                    registry.registerThoughtSpec.selector, DEFAULT_SPEC_NAME, DEFAULT_SPEC_REF, bytes(DEFAULT_SPEC_TEXT)
                 )
             );
         require(!ok, "duplicate spec id should fail");
     }
 
     function testRegisterSpecAndReadExactBytesBack() public {
-        bytes32 specId = keccak256("thought.md.v2");
+        string memory specName = "THOUGHT.v2.md";
+        bytes32 specId = keccak256(bytes(specName));
         bytes memory specBytes = bytes("THOUGHT.md v2\nnew procedure");
-        registry.registerSpec(specId, "THOUGHT.md@v2", specBytes, false);
+        (bytes32 returnedId, bytes32 returnedHash, address pointer) =
+            registry.registerThoughtSpec(specName, "THOUGHT.md@v2", specBytes);
 
-        (bytes32 hash, string memory ref, address pointer, uint32 byteLength,, bool exists) = registry.specMeta(specId);
+        (bool exists, string memory returnedName, bytes32 hash, string memory ref, address metaPointer, uint32 byteLength,) =
+            registry.thoughtSpecMeta(specId);
         require(exists, "new spec should exist");
+        require(returnedId == specId, "new spec id mismatch");
+        require(returnedHash == keccak256(specBytes), "new spec returned hash mismatch");
+        require(_equal(returnedName, specName), "new spec name mismatch");
         require(hash == keccak256(specBytes), "new spec hash mismatch");
         require(_equal(ref, "THOUGHT.md@v2"), "new spec ref mismatch");
         require(pointer != address(0), "new spec pointer missing");
+        require(metaPointer == pointer, "new spec meta pointer mismatch");
         require(byteLength == specBytes.length, "new spec byte length mismatch");
-        require(_bytesEqual(registry.specBytes(specId), specBytes), "new spec bytes mismatch");
-        require(registry.validateSpec(specId), "new spec validation failed");
+        require(_bytesEqual(registry.thoughtSpecBytes(specId), specBytes), "new spec bytes mismatch");
+        require(registry.validateThoughtSpec(specId, keccak256(specBytes)), "new spec validation failed");
+    }
+
+    function testSpecNameValidation() public view {
+        require(registry.isValidThoughtSpecName("THOUGHT.v1.md"), "v1 should pass");
+        require(registry.isValidThoughtSpecName("THOUGHT.v2.md"), "v2 should pass");
+        require(registry.isValidThoughtSpecName("THOUGHT.v12.md"), "v12 should pass");
+        require(!registry.isValidThoughtSpecName("THOUGHT.v0.md"), "v0 should fail");
+        require(!registry.isValidThoughtSpecName("THOUGHT.v01.md"), "leading zero should fail");
+        require(!registry.isValidThoughtSpecName("THOUGHT.md"), "old name should fail");
+        require(!registry.isValidThoughtSpecName("THOUGHT.V1.md"), "case variant should fail");
+        require(!registry.isValidThoughtSpecName("MY_BRAIN.v1.md"), "foreign namespace should fail");
+        require(!registry.isValidThoughtSpecName("THOUGHT.v1.txt"), "wrong suffix should fail");
+        require(!registry.isValidThoughtSpecName(""), "empty name should fail");
+    }
+
+    function testSpecDataValidation() public {
+        vm.expectRevert(abi.encodeWithSelector(ThoughtSpecRegistry.EmptyThoughtSpec.selector));
+        registry.registerThoughtSpec("THOUGHT.v2.md", "empty", "");
+
+        bytes memory tooLarge = _bytesRepeat("S", registry.MAX_THOUGHT_SPEC_BYTES() + 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ThoughtSpecRegistry.ThoughtSpecTooLarge.selector,
+                tooLarge.length,
+                registry.MAX_THOUGHT_SPEC_BYTES()
+            )
+        );
+        registry.registerThoughtSpec("THOUGHT.v2.md", "too-large", tooLarge);
+
+        bytes memory boundary = _bytesRepeat("S", registry.MAX_THOUGHT_SPEC_BYTES());
+        registry.registerThoughtSpec("THOUGHT.v2.md", "boundary", boundary);
     }
 
     function testGas_registerSpec_500Bytes() public {
-        registry.registerSpec(keccak256("gas.spec.500"), "gas.spec.500", _bytesRepeat("S", 500), false);
+        registry.registerThoughtSpec("THOUGHT.v2.md", "gas.spec.500", _bytesRepeat("S", 500));
     }
 
     function testGas_registerSpec_1KB() public {
-        registry.registerSpec(keccak256("gas.spec.1kb"), "gas.spec.1kb", _bytesRepeat("S", 1024), false);
+        registry.registerThoughtSpec("THOUGHT.v2.md", "gas.spec.1kb", _bytesRepeat("S", 1024));
     }
 
     function testGas_registerSpec_4KB() public {
-        registry.registerSpec(keccak256("gas.spec.4kb"), "gas.spec.4kb", _bytesRepeat("S", 4096), false);
+        registry.registerThoughtSpec("THOUGHT.v2.md", "gas.spec.4kb", _bytesRepeat("S", 4096));
     }
 
     function testGas_registerSpec_8KB() public {
-        registry.registerSpec(keccak256("gas.spec.8kb"), "gas.spec.8kb", _bytesRepeat("S", 8192), false);
+        registry.registerThoughtSpec("THOUGHT.v2.md", "gas.spec.8kb", _bytesRepeat("S", 8192));
     }
 
     function testGas_registerSpec_16KB() public {
-        registry.registerSpec(keccak256("gas.spec.16kb"), "gas.spec.16kb", _bytesRepeat("S", 16_384), false);
+        registry.registerThoughtSpec("THOUGHT.v2.md", "gas.spec.16kb", _bytesRepeat("S", 16_384));
     }
 
     function testNormalizeThoughtKeepsReadableSingleSpaces() public view {
@@ -402,7 +438,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     "hello",
                     1,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     DEFAULT_PROVENANCE,
                     auth.deadline,
@@ -436,22 +472,12 @@ contract ThoughtNFTTest {
         require(token.pathSerialOf(tokenId) == 0, "unexpected path serial");
         require(path.thoughtConsumed(1), "path thought was not consumed");
 
-        ThoughtNFT.ThoughtRecord memory record = token.getThought(tokenId);
-        require(_equal(record.rawText, storedText), "record raw text mismatch");
-        require(_equal(record.provenanceJson, provenance), "record provenance mismatch");
-        require(record.textHash == textHash, "record text hash mismatch");
-        require(record.promptHash == DEFAULT_PROMPT_HASH, "record prompt hash mismatch");
-        require(record.provenanceHash == provenanceHash, "record provenance hash mismatch");
-        require(record.thoughtSpecId == DEFAULT_SPEC_ID, "record spec mismatch");
-        require(record.pathId == 1, "record path mismatch");
-        require(record.minter == user, "record minter mismatch");
-        require(record.mintedAt == uint64(block.timestamp), "record mintedAt mismatch");
-
         (
             bytes32 recordTextHash,
             bytes32 recordPromptHash,
             bytes32 recordProvenanceHash,
             bytes32 recordSpecId,
+            bytes32 recordSpecHash,
             uint256 recordPathId,
             address recordMinter,
             uint64 recordMintedAt
@@ -460,6 +486,7 @@ contract ThoughtNFTTest {
         require(recordPromptHash == DEFAULT_PROMPT_HASH, "recordOf prompt hash mismatch");
         require(recordProvenanceHash == provenanceHash, "recordOf provenance hash mismatch");
         require(recordSpecId == DEFAULT_SPEC_ID, "recordOf spec mismatch");
+        require(recordSpecHash == DEFAULT_SPEC_HASH, "recordOf spec hash mismatch");
         require(recordPathId == 1, "recordOf path mismatch");
         require(recordMinter == user, "recordOf minter mismatch");
         require(recordMintedAt == uint64(block.timestamp), "recordOf mintedAt mismatch");
@@ -511,8 +538,14 @@ contract ThoughtNFTTest {
     function testTokenUriIsMetadataJsonWithOnchainSvgImage() public {
         uint256 tokenId = _mintAsUser("HELLOWORLD", 1, USER_KEY);
         string memory uri = token.tokenURI(tokenId);
+        string memory metadata = _metadataJsonFromTokenUri(uri);
         string memory svg = token.svgOf(tokenId);
         require(_contains(uri, "data:application/json;base64,"), "missing metadata data uri");
+        require(_contains(metadata, '"Thought Spec ID"'), "metadata missing spec id trait");
+        require(_contains(metadata, _bytes32ToHexTest(DEFAULT_SPEC_ID)), "metadata missing typed spec id");
+        require(_contains(metadata, '"Thought Spec Hash"'), "metadata missing spec hash trait");
+        require(_contains(metadata, _bytes32ToHexTest(DEFAULT_SPEC_HASH)), "metadata missing typed spec hash");
+        require(!_contains(metadata, DEFAULT_SPEC_TEXT), "metadata should not embed full spec text");
         require(_contains(svg, "<svg"), "missing svg root");
         require(_contains(svg, ">HELLOWORLD</text>"), "missing rendered text");
         require(_equal(svg, token.renderTokenSvg(tokenId)), "svg helper mismatch");
@@ -529,7 +562,7 @@ contract ThoughtNFTTest {
                 token.mint.selector,
                 "HELLO",
                 1,
-                DEFAULT_SPEC_ID,
+                DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                 DEFAULT_PROMPT_HASH,
                 DEFAULT_PROVENANCE,
                 auth.deadline,
@@ -552,7 +585,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     text,
                     1,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     DEFAULT_PROVENANCE,
                     auth.deadline,
@@ -573,7 +606,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     "HELLO",
                     1,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     DEFAULT_PROVENANCE,
                     auth.deadline,
@@ -595,7 +628,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     "SECOND",
                     1,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     DEFAULT_PROVENANCE,
                     auth.deadline,
@@ -621,7 +654,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     "HELLO",
                     2,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     '{"schema":"thought.provenance.v1","run":"b"}',
                     auth.deadline,
@@ -662,7 +695,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     "",
                     1,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     DEFAULT_PROVENANCE,
                     auth.deadline,
@@ -680,7 +713,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     " \n\t ",
                     2,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     DEFAULT_PROVENANCE,
                     whitespaceAuth.deadline,
@@ -698,7 +731,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     "12345!!!",
                     3,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     DEFAULT_PROVENANCE,
                     numberAuth.deadline,
@@ -718,7 +751,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     "HELLO",
                     1,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     "",
                     auth.deadline,
@@ -740,6 +773,7 @@ contract ThoughtNFTTest {
                     "HELLO",
                     1,
                     unknownSpecId,
+                    DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     DEFAULT_PROVENANCE,
                     auth.deadline,
@@ -750,6 +784,102 @@ contract ThoughtNFTTest {
         require(!path.thoughtConsumed(1), "unknown spec should not consume path");
     }
 
+    function testWrongAndZeroThoughtSpecPairsRevert() public {
+        ConsumeAuth memory wrongHashAuth = _signConsume(1, USER_KEY);
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ThoughtNFT.InvalidThoughtSpecPair.selector, DEFAULT_SPEC_ID, bytes32(uint256(0xBEEF))
+            )
+        );
+        token.mint(
+            "HELLO",
+            1,
+            DEFAULT_SPEC_ID,
+            bytes32(uint256(0xBEEF)),
+            DEFAULT_PROMPT_HASH,
+            DEFAULT_PROVENANCE,
+            wrongHashAuth.deadline,
+            wrongHashAuth.signature
+        );
+        require(!path.thoughtConsumed(1), "wrong spec hash should not consume path");
+
+        ConsumeAuth memory zeroIdAuth = _signConsume(2, USER_KEY);
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(ThoughtNFT.InvalidThoughtSpecPair.selector, bytes32(0), DEFAULT_SPEC_HASH)
+        );
+        token.mint(
+            "WORLD",
+            2,
+            bytes32(0),
+            DEFAULT_SPEC_HASH,
+            DEFAULT_PROMPT_HASH,
+            DEFAULT_PROVENANCE,
+            zeroIdAuth.deadline,
+            zeroIdAuth.signature
+        );
+        require(!path.thoughtConsumed(2), "zero spec id should not consume path");
+
+        ConsumeAuth memory zeroHashAuth = _signConsume(3, USER_KEY);
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(ThoughtNFT.InvalidThoughtSpecPair.selector, DEFAULT_SPEC_ID, bytes32(0))
+        );
+        token.mint(
+            "THIRD",
+            3,
+            DEFAULT_SPEC_ID,
+            bytes32(0),
+            DEFAULT_PROMPT_HASH,
+            DEFAULT_PROVENANCE,
+            zeroHashAuth.deadline,
+            zeroHashAuth.signature
+        );
+        require(!path.thoughtConsumed(3), "zero spec hash should not consume path");
+    }
+
+    function testOlderAndNewerRegisteredSpecsCanBothMint() public {
+        bytes memory v2Bytes = bytes("THOUGHT.md fixture v2");
+        (bytes32 v2SpecId, bytes32 v2SpecHash,) =
+            registry.registerThoughtSpec("THOUGHT.v2.md", "THOUGHT.v2.md", v2Bytes);
+
+        uint256 olderTokenId = _mintAsUserWithSpec("OLDER", 1, USER_KEY, DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH);
+        uint256 newerTokenId = _mintAsUserWithSpec("NEWER", 2, USER_KEY, v2SpecId, v2SpecHash);
+
+        (,,, bytes32 olderSpecId, bytes32 olderSpecHash,,,) = token.recordOf(olderTokenId);
+        (,,, bytes32 newerSpecId, bytes32 newerSpecHash,,,) = token.recordOf(newerTokenId);
+        require(olderSpecId == DEFAULT_SPEC_ID, "older spec id mismatch");
+        require(olderSpecHash == DEFAULT_SPEC_HASH, "older spec hash mismatch");
+        require(newerSpecId == v2SpecId, "newer spec id mismatch");
+        require(newerSpecHash == v2SpecHash, "newer spec hash mismatch");
+
+        (bytes32 resolvedId, bytes32 resolvedHash, string memory resolvedName, string memory resolvedRef) =
+            token.thoughtSpecOf(newerTokenId);
+        require(resolvedId == v2SpecId, "resolved spec id mismatch");
+        require(resolvedHash == v2SpecHash, "resolved spec hash mismatch");
+        require(_equal(resolvedName, "THOUGHT.v2.md"), "resolved spec name mismatch");
+        require(_equal(resolvedRef, "THOUGHT.v2.md"), "resolved spec ref mismatch");
+    }
+
+    function testTypedSpecStateWinsOverProvenanceJson() public {
+        string memory conflictingProvenance =
+            '{"schema":"thought.provenance.v1","thoughtSpecId":"0xdead","thoughtSpecHash":"0xbeef"}';
+        uint256 tokenId = _mintAsUserWithProvenance("TYPED", conflictingProvenance, 1, USER_KEY);
+
+        (,,, bytes32 recordSpecId, bytes32 recordSpecHash,,,) = token.recordOf(tokenId);
+        (bytes32 resolvedSpecId, bytes32 resolvedSpecHash, string memory resolvedName,) = token.thoughtSpecOf(tokenId);
+        require(recordSpecId == DEFAULT_SPEC_ID, "record spec id should be typed state");
+        require(recordSpecHash == DEFAULT_SPEC_HASH, "record spec hash should be typed state");
+        require(resolvedSpecId == DEFAULT_SPEC_ID, "resolved spec id should be typed state");
+        require(resolvedSpecHash == DEFAULT_SPEC_HASH, "resolved spec hash should be typed state");
+        require(_equal(resolvedName, DEFAULT_SPEC_NAME), "resolved spec name mismatch");
+
+        string memory uri = token.tokenURI(tokenId);
+        require(!_contains(uri, "proof of model generation"), "metadata uses proof language");
+        require(!_contains(uri, "verified AI output"), "metadata uses verification language");
+    }
+
     function testOversizeTextReverts() public {
         string memory text = _repeat("A", token.MAX_TEXT_BYTES() + 1);
         ConsumeAuth memory auth = _signConsume(1, USER_KEY);
@@ -757,7 +887,7 @@ contract ThoughtNFTTest {
         vm.expectRevert(
             abi.encodeWithSelector(ThoughtNFT.ThoughtTextTooLarge.selector, bytes(text).length, token.MAX_TEXT_BYTES())
         );
-        token.mint(text, 1, DEFAULT_SPEC_ID, DEFAULT_PROMPT_HASH, DEFAULT_PROVENANCE, auth.deadline, auth.signature);
+        token.mint(text, 1, DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH, DEFAULT_PROMPT_HASH, DEFAULT_PROVENANCE, auth.deadline, auth.signature);
         require(!path.thoughtConsumed(1), "oversize text should not consume path");
     }
 
@@ -771,7 +901,7 @@ contract ThoughtNFTTest {
                     token.mint.selector,
                     "HELLO",
                     1,
-                    DEFAULT_SPEC_ID,
+                    DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH,
                     DEFAULT_PROMPT_HASH,
                     provenance,
                     auth.deadline,
@@ -810,7 +940,9 @@ contract ThoughtNFTTest {
         bytes32 provenanceHash = keccak256(bytes(provenance));
 
         vm.expectEmit(true, true, true, true);
-        emit ThoughtMinted(1, user, 1, textHash, provenanceHash, DEFAULT_SPEC_ID, uint64(block.timestamp));
+        emit ThoughtMinted(
+            1, user, 1, textHash, provenanceHash, DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH, uint64(block.timestamp)
+        );
 
         _mintAsUserWithProvenance(text, provenance, 1, USER_KEY);
     }
@@ -830,7 +962,19 @@ contract ThoughtNFTTest {
     {
         ConsumeAuth memory auth = _signConsume(pathId, privateKey);
         vm.prank(user);
-        return token.mint(text, pathId, DEFAULT_SPEC_ID, DEFAULT_PROMPT_HASH, provenance, auth.deadline, auth.signature);
+        return token.mint(text, pathId, DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH, DEFAULT_PROMPT_HASH, provenance, auth.deadline, auth.signature);
+    }
+
+    function _mintAsUserWithSpec(
+        string memory text,
+        uint256 pathId,
+        uint256 privateKey,
+        bytes32 specId,
+        bytes32 specHash
+    ) private returns (uint256 tokenId) {
+        ConsumeAuth memory auth = _signConsume(pathId, privateKey);
+        vm.prank(user);
+        return token.mint(text, pathId, specId, specHash, DEFAULT_PROMPT_HASH, DEFAULT_PROVENANCE, auth.deadline, auth.signature);
     }
 
     function _signConsume(uint256 pathId, uint256 privateKey) private returns (ConsumeAuth memory auth) {
@@ -863,8 +1007,87 @@ contract ThoughtNFTTest {
                 ThoughtNFT.ProvenanceTooLarge.selector, bytes(provenance).length, token.MAX_PROVENANCE_BYTES()
             )
         );
-        token.mint("OVERSIZE", pathId, DEFAULT_SPEC_ID, DEFAULT_PROMPT_HASH, provenance, auth.deadline, auth.signature);
+        token.mint("OVERSIZE", pathId, DEFAULT_SPEC_ID, DEFAULT_SPEC_HASH, DEFAULT_PROMPT_HASH, provenance, auth.deadline, auth.signature);
         require(!path.thoughtConsumed(pathId), "oversize provenance should not consume path");
+    }
+
+    function _bytes32ToHexTest(bytes32 value) private pure returns (string memory) {
+        bytes16 hexDigits = "0123456789abcdef";
+        bytes memory output = new bytes(66);
+        output[0] = "0";
+        output[1] = "x";
+        for (uint256 i = 0; i < 32; i++) {
+            uint8 charCode = uint8(value[i]);
+            output[2 + i * 2] = hexDigits[charCode >> 4];
+            output[3 + i * 2] = hexDigits[charCode & 0x0f];
+        }
+        return string(output);
+    }
+
+    function _metadataJsonFromTokenUri(string memory uri) private pure returns (string memory) {
+        bytes memory source = bytes(uri);
+        bytes memory prefix = bytes("data:application/json;base64,");
+        require(source.length > prefix.length, "token uri too short");
+        for (uint256 i = 0; i < prefix.length; i++) {
+            require(source[i] == prefix[i], "token uri prefix mismatch");
+        }
+
+        bytes memory encoded = new bytes(source.length - prefix.length);
+        for (uint256 i = 0; i < encoded.length; i++) {
+            encoded[i] = source[prefix.length + i];
+        }
+        return string(_base64Decode(encoded));
+    }
+
+    function _base64Decode(bytes memory data) private pure returns (bytes memory) {
+        require(data.length % 4 == 0, "bad base64 length");
+        uint256 padding = 0;
+        if (data.length > 0 && data[data.length - 1] == bytes1("=")) {
+            padding++;
+        }
+        if (data.length > 1 && data[data.length - 2] == bytes1("=")) {
+            padding++;
+        }
+
+        bytes memory output = new bytes((data.length / 4) * 3 - padding);
+        uint256 out = 0;
+        for (uint256 i = 0; i < data.length; i += 4) {
+            uint24 chunk = (uint24(_base64Value(data[i])) << 18) | (uint24(_base64Value(data[i + 1])) << 12)
+                | (uint24(_base64Value(data[i + 2])) << 6) | uint24(_base64Value(data[i + 3]));
+            if (out < output.length) {
+                output[out++] = bytes1(uint8(chunk >> 16));
+            }
+            if (out < output.length) {
+                output[out++] = bytes1(uint8(chunk >> 8));
+            }
+            if (out < output.length) {
+                output[out++] = bytes1(uint8(chunk));
+            }
+        }
+        return output;
+    }
+
+    function _base64Value(bytes1 char_) private pure returns (uint8) {
+        uint8 code = uint8(char_);
+        if (code >= 65 && code <= 90) {
+            return code - 65;
+        }
+        if (code >= 97 && code <= 122) {
+            return code - 71;
+        }
+        if (code >= 48 && code <= 57) {
+            return code + 4;
+        }
+        if (char_ == bytes1("+")) {
+            return 62;
+        }
+        if (char_ == bytes1("/")) {
+            return 63;
+        }
+        if (char_ == bytes1("=")) {
+            return 0;
+        }
+        revert("bad base64 char");
     }
 
     function _contains(string memory haystack, string memory needle) private pure returns (bool) {

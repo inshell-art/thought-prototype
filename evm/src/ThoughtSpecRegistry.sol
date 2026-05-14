@@ -4,37 +4,42 @@ pragma solidity ^0.8.28;
 import {ContractCodeStorage} from "./ContractCodeStorage.sol";
 
 contract ThoughtSpecRegistry {
-    error InvalidThoughtSpecPointer(address pointer);
+    error EmptyThoughtSpec();
+    error InvalidThoughtSpecName(string specName);
+    error InvalidThoughtSpecPair(bytes32 specId, bytes32 specHash);
     error NotOwner();
-    error ThoughtSpecAlreadyExists(bytes32 specId);
-    error ThoughtSpecEmpty();
-    error ThoughtSpecHashMismatch(bytes32 expected, bytes32 actual);
+    error ThoughtSpecAlreadyRegistered(bytes32 specId);
+    error ThoughtSpecHashMismatch(bytes32 specId, bytes32 expected, bytes32 actual);
     error ThoughtSpecNotFound(bytes32 specId);
+    error ThoughtSpecPointerInvalid(bytes32 specId);
+    error ThoughtSpecTooLarge(uint256 length, uint256 maxLength);
 
-    event ActiveThoughtSpecSet(bytes32 indexed specId);
     event ThoughtSpecRegistered(
         bytes32 indexed specId,
-        bytes32 specHash,
+        bytes32 indexed specHash,
+        string specName,
         string ref,
         address pointer,
-        uint32 byteLength,
-        uint64 registeredAt
+        uint32 byteLength
     );
 
-    struct ThoughtSpec {
+    struct ThoughtSpecRecord {
+        bool exists;
+        string specName;
         bytes32 specId;
         bytes32 specHash;
         string ref;
         address pointer;
         uint32 byteLength;
         uint64 registeredAt;
-        bool exists;
     }
 
-    address public immutable owner;
-    bytes32 public activeSpecId;
+    uint256 public constant MAX_THOUGHT_SPEC_BYTES = 20_000;
 
-    mapping(bytes32 specId => ThoughtSpec spec) private _specs;
+    address public immutable owner;
+
+    mapping(bytes32 specId => ThoughtSpecRecord spec) private _specs;
+    bytes32[] private _specIds;
 
     constructor() {
         owner = msg.sender;
@@ -47,136 +52,216 @@ contract ThoughtSpecRegistry {
         _;
     }
 
-    function registerSpec(bytes32 specId, string calldata ref, bytes calldata specData, bool setActive)
+    function registerThoughtSpec(string calldata specName, string calldata ref, bytes calldata specData)
         external
         onlyOwner
-        returns (address pointer)
+        returns (bytes32 specId, bytes32 specHash, address pointer)
     {
+        if (!isValidThoughtSpecName(specName)) {
+            revert InvalidThoughtSpecName(specName);
+        }
+        if (specData.length == 0) {
+            revert EmptyThoughtSpec();
+        }
+        if (specData.length > MAX_THOUGHT_SPEC_BYTES) {
+            revert ThoughtSpecTooLarge(specData.length, MAX_THOUGHT_SPEC_BYTES);
+        }
+
+        specId = keccak256(bytes(specName));
         if (_specs[specId].exists) {
-            revert ThoughtSpecAlreadyExists(specId);
-        }
-        if (specId == bytes32(0) || specData.length == 0) {
-            revert ThoughtSpecEmpty();
-        }
-        if (specData.length > type(uint32).max) {
-            revert ThoughtSpecEmpty();
+            revert ThoughtSpecAlreadyRegistered(specId);
         }
 
-        bytes32 specHash = keccak256(specData);
+        specHash = keccak256(specData);
         pointer = ContractCodeStorage.write(specData);
-        bytes32 storedHash = keccak256(ContractCodeStorage.read(pointer));
+
+        bytes memory storedData = ContractCodeStorage.read(pointer);
+        bytes32 storedHash = keccak256(storedData);
         if (storedHash != specHash) {
-            revert ThoughtSpecHashMismatch(specHash, storedHash);
+            revert ThoughtSpecHashMismatch(specId, specHash, storedHash);
         }
 
-        uint64 registeredAt = uint64(block.timestamp);
         uint32 byteLength = uint32(specData.length);
-        _specs[specId] = ThoughtSpec({
+        _specs[specId] = ThoughtSpecRecord({
+            exists: true,
+            specName: specName,
             specId: specId,
             specHash: specHash,
             ref: ref,
             pointer: pointer,
             byteLength: byteLength,
-            registeredAt: registeredAt,
-            exists: true
+            registeredAt: uint64(block.timestamp)
         });
+        _specIds.push(specId);
 
-        emit ThoughtSpecRegistered(specId, specHash, ref, pointer, byteLength, registeredAt);
+        emit ThoughtSpecRegistered(specId, specHash, specName, ref, pointer, byteLength);
+    }
 
-        if (setActive) {
-            activeSpecId = specId;
-            emit ActiveThoughtSpecSet(specId);
+    function thoughtSpecIdOfName(string calldata specName) external pure returns (bytes32) {
+        if (!isValidThoughtSpecName(specName)) {
+            revert InvalidThoughtSpecName(specName);
         }
+        return keccak256(bytes(specName));
     }
 
-    function specMeta(bytes32 specId)
-        public
-        view
-        returns (
-            bytes32 specHash,
-            string memory ref,
-            address pointer,
-            uint32 byteLength,
-            uint64 registeredAt,
-            bool exists
-        )
-    {
-        ThoughtSpec storage spec = _specs[specId];
-        return (spec.specHash, spec.ref, spec.pointer, spec.byteLength, spec.registeredAt, spec.exists);
-    }
+    function isValidThoughtSpecName(string memory specName) public pure returns (bool) {
+        bytes memory value = bytes(specName);
+        bytes memory prefix = bytes("THOUGHT.v");
+        bytes memory suffix = bytes(".md");
 
-    function specBytes(bytes32 specId) public view returns (bytes memory) {
-        ThoughtSpec storage spec = _requireSpec(specId);
-        bytes memory data = ContractCodeStorage.read(spec.pointer);
-        bytes32 actualHash = keccak256(data);
-        if (actualHash != spec.specHash) {
-            revert ThoughtSpecHashMismatch(spec.specHash, actualHash);
+        if (value.length <= prefix.length + suffix.length) {
+            return false;
         }
-        return data;
+
+        for (uint256 i = 0; i < prefix.length; i++) {
+            if (value[i] != prefix[i]) {
+                return false;
+            }
+        }
+
+        uint256 suffixStart = value.length - suffix.length;
+        for (uint256 i = 0; i < suffix.length; i++) {
+            if (value[suffixStart + i] != suffix[i]) {
+                return false;
+            }
+        }
+
+        uint256 versionStart = prefix.length;
+        if (versionStart >= suffixStart) {
+            return false;
+        }
+        if (value[versionStart] == bytes1("0")) {
+            return false;
+        }
+
+        for (uint256 i = versionStart; i < suffixStart; i++) {
+            if (value[i] < bytes1("0") || value[i] > bytes1("9")) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
-    function specText(bytes32 specId) external view returns (string memory) {
-        return string(specBytes(specId));
+    function thoughtSpecExists(bytes32 specId) external view returns (bool) {
+        return _specs[specId].exists;
     }
 
-    function activeSpecMeta()
-        external
-        view
-        returns (
-            bytes32 specId,
-            bytes32 specHash,
-            string memory ref,
-            address pointer,
-            uint32 byteLength,
-            uint64 registeredAt,
-            bool exists
-        )
-    {
-        bytes32 specId_ = activeSpecId;
-        (
-            bytes32 specHash_,
-            string memory ref_,
-            address pointer_,
-            uint32 byteLength_,
-            uint64 registeredAt_,
-            bool exists_
-        ) =
-            specMeta(specId_);
-        return (specId_, specHash_, ref_, pointer_, byteLength_, registeredAt_, exists_);
+    function isRegisteredThoughtSpec(bytes32 specId, bytes32 specHash) external view returns (bool) {
+        ThoughtSpecRecord storage spec = _specs[specId];
+        return spec.exists && specHash != bytes32(0) && spec.specHash == specHash;
     }
 
-    function activeSpecBytes() external view returns (bytes memory) {
-        return specBytes(_requireActiveSpecId());
-    }
-
-    function activeSpecText() external view returns (string memory) {
-        return string(specBytes(_requireActiveSpecId()));
-    }
-
-    function validateSpec(bytes32 specId) external view returns (bool) {
-        ThoughtSpec storage spec = _specs[specId];
-        if (!spec.exists || spec.pointer == address(0)) {
+    function validateThoughtSpec(bytes32 specId, bytes32 specHash) external view returns (bool) {
+        ThoughtSpecRecord storage spec = _specs[specId];
+        if (!spec.exists || specHash == bytes32(0) || spec.specHash != specHash || spec.pointer == address(0)) {
+            return false;
+        }
+        if (spec.pointer.code.length <= 1) {
             return false;
         }
 
         bytes memory data = ContractCodeStorage.read(spec.pointer);
-        return keccak256(data) == spec.specHash && data.length == spec.byteLength;
+        return data.length == spec.byteLength && keccak256(data) == specHash;
     }
 
-    function _requireSpec(bytes32 specId) private view returns (ThoughtSpec storage spec) {
+    function thoughtSpecMeta(bytes32 specId)
+        public
+        view
+        returns (
+            bool exists,
+            string memory specName,
+            bytes32 specHash,
+            string memory ref,
+            address pointer,
+            uint32 byteLength,
+            uint64 registeredAt
+        )
+    {
+        ThoughtSpecRecord storage spec = _specs[specId];
+        return (
+            spec.exists,
+            spec.specName,
+            spec.specHash,
+            spec.ref,
+            spec.pointer,
+            spec.byteLength,
+            spec.registeredAt
+        );
+    }
+
+    function thoughtSpecBytes(bytes32 specId) public view returns (bytes memory) {
+        ThoughtSpecRecord storage spec = _requireSpec(specId);
+        bytes memory data = ContractCodeStorage.read(spec.pointer);
+        bytes32 actualHash = keccak256(data);
+        if (actualHash != spec.specHash) {
+            revert ThoughtSpecHashMismatch(specId, spec.specHash, actualHash);
+        }
+        if (data.length != spec.byteLength) {
+            revert ThoughtSpecPointerInvalid(specId);
+        }
+        return data;
+    }
+
+    function thoughtSpecText(bytes32 specId) external view returns (string memory) {
+        return string(thoughtSpecBytes(specId));
+    }
+
+    function thoughtSpecCount() external view returns (uint256) {
+        return _specIds.length;
+    }
+
+    function thoughtSpecIdAt(uint256 index) external view returns (bytes32) {
+        return _specIds[index];
+    }
+
+    function latestThoughtSpecId() external view returns (bytes32) {
+        if (_specIds.length == 0) {
+            return bytes32(0);
+        }
+        return _specIds[_specIds.length - 1];
+    }
+
+    // Backward-compatible read wrappers. They expose archive data only; there is no active spec.
+    function specMeta(bytes32 specId)
+        external
+        view
+        returns (
+            bytes32 specHash,
+            string memory ref,
+            address pointer,
+            uint32 byteLength,
+            uint64 registeredAt,
+            bool exists
+        )
+    {
+        ThoughtSpecRecord storage spec = _specs[specId];
+        return (spec.specHash, spec.ref, spec.pointer, spec.byteLength, spec.registeredAt, spec.exists);
+    }
+
+    function specBytes(bytes32 specId) external view returns (bytes memory) {
+        return thoughtSpecBytes(specId);
+    }
+
+    function specText(bytes32 specId) external view returns (string memory) {
+        return string(thoughtSpecBytes(specId));
+    }
+
+    function validateSpec(bytes32 specId) external view returns (bool) {
+        ThoughtSpecRecord storage spec = _specs[specId];
+        if (!spec.exists) {
+            return false;
+        }
+        return this.validateThoughtSpec(specId, spec.specHash);
+    }
+
+    function _requireSpec(bytes32 specId) private view returns (ThoughtSpecRecord storage spec) {
         spec = _specs[specId];
         if (!spec.exists) {
             revert ThoughtSpecNotFound(specId);
         }
-        if (spec.pointer == address(0)) {
-            revert InvalidThoughtSpecPointer(spec.pointer);
-        }
-    }
-
-    function _requireActiveSpecId() private view returns (bytes32 specId) {
-        specId = activeSpecId;
-        if (!_specs[specId].exists) {
-            revert ThoughtSpecNotFound(specId);
+        if (spec.pointer == address(0) || spec.pointer.code.length <= 1) {
+            revert ThoughtSpecPointerInvalid(specId);
         }
     }
 }

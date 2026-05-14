@@ -57,7 +57,7 @@ npm run build:evm
 RPC_URL=http://192.168.0.104:8545 npm run devnode:deploy
 ```
 
-By default this deploys the active repo `THOUGHT.md` into `ThoughtSpecRegistry`, configures and freezes the PATH `THOUGHT` movement with quota `1`, and mints dev `$PATH #1` through `$PATH #10` to `0xf39f...2266`.
+By default this deploys raw `THOUGHT.v1.md` bytes into `ThoughtSpecRegistry`, writes `recommendedThoughtSpec*` fields to `evm/addresses.anvil.json`, configures and freezes the PATH `THOUGHT` movement with quota `1`, and mints dev `$PATH #1` through `$PATH #10` to `0xf39f...2266`.
 
 To change the seeded PATH count:
 
@@ -128,11 +128,16 @@ import { Contract, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers';
 const addresses = JSON.parse(fs.readFileSync('evm/addresses.anvil.json', 'utf8'));
 const provider = new JsonRpcProvider(addresses.rpcUrl);
 const registry = new Contract(addresses.thoughtSpecRegistry.address, [
-  'function activeSpecMeta() view returns (bytes32 specId, bytes32 specHash, string ref, address pointer, uint32 byteLength, uint64 registeredAt, bool exists)',
+  'function thoughtSpecMeta(bytes32 specId) view returns (bool exists, string specName, bytes32 specHash, string ref, address pointer, uint32 byteLength, uint64 registeredAt)',
+  'function thoughtSpecBytes(bytes32 specId) view returns (bytes)',
 ], provider);
-const localHash = keccak256(toUtf8Bytes(fs.readFileSync('THOUGHT.md', 'utf8')));
-const [, specHash, ref, , byteLength, , exists] = await registry.activeSpecMeta();
+const specId = addresses.recommendedThoughtSpecId;
+const localBytes = fs.readFileSync(addresses.recommendedThoughtSpecName);
+const localHash = keccak256(localBytes);
+const [exists, specName, specHash, ref, , byteLength] = await registry.thoughtSpecMeta(specId);
+const readback = await registry.thoughtSpecBytes(specId);
 console.log({ ref, byteLength: Number(byteLength), exists, match: specHash.toLowerCase() === localHash.toLowerCase() });
+console.log({ specName, readbackMatch: keccak256(readback).toLowerCase() === localHash.toLowerCase() });
 NODE
 ```
 

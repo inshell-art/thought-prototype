@@ -16,16 +16,19 @@ interface IPathNFT {
 }
 
 interface IThoughtSpecRegistry {
-    function specMeta(bytes32 specId)
+    function isRegisteredThoughtSpec(bytes32 specId, bytes32 specHash) external view returns (bool);
+
+    function thoughtSpecMeta(bytes32 specId)
         external
         view
         returns (
+            bool exists,
+            string memory specName,
             bytes32 specHash,
             string memory ref,
             address pointer,
             uint32 byteLength,
-            uint64 registeredAt,
-            bool exists
+            uint64 registeredAt
         );
 }
 
@@ -39,6 +42,7 @@ contract ThoughtNFT {
     error InvalidPathNft();
     error InvalidReceiver();
     error InvalidSender();
+    error InvalidThoughtSpecPair(bytes32 thoughtSpecId, bytes32 thoughtSpecHash);
     error InvalidThoughtSpecRegistry();
     error NonexistentToken();
     error NotAuthorized();
@@ -47,7 +51,6 @@ contract ThoughtNFT {
     error ReentrantCall();
     error ThoughtAlreadyMinted(bytes32 textHash, uint256 tokenId);
     error ThoughtTextTooLarge(uint256 actual, uint256 max);
-    error UnknownThoughtSpec(bytes32 thoughtSpecId);
     error TransferToNonReceiverImplementer();
     error TransferToZeroAddress();
 
@@ -62,6 +65,7 @@ contract ThoughtNFT {
         bytes32 textHash,
         bytes32 provenanceHash,
         bytes32 thoughtSpecId,
+        bytes32 thoughtSpecHash,
         uint64 mintedAt
     );
 
@@ -72,6 +76,7 @@ contract ThoughtNFT {
         bytes32 promptHash;
         bytes32 provenanceHash;
         bytes32 thoughtSpecId;
+        bytes32 thoughtSpecHash;
         uint256 pathId;
         uint32 pathSerial;
         address minter;
@@ -91,7 +96,6 @@ contract ThoughtNFT {
     uint8 public constant ERR_INVALID_CHARACTER = 4;
     uint8 public constant ERR_NOT_CANONICAL = 5;
     bytes32 public constant PATH_MOVEMENT_THOUGHT = bytes32("THOUGHT");
-    bytes32 public constant DEFAULT_THOUGHT_SPEC_ID = keccak256("THOUGHT.v1.md");
     uint256 private constant CANVAS_SIZE = 960;
     uint256 private constant CANVAS_PADDING = 28;
     uint256 private constant IMAGE_SIZE = 29;
@@ -245,11 +249,6 @@ contract ThoughtNFT {
         return IColorFontV1(colorFont).glyphOf(letter_);
     }
 
-    function getThought(uint256 tokenId) external view returns (ThoughtRecord memory) {
-        _requireMinted(tokenId);
-        return _thoughts[tokenId];
-    }
-
     function rawTextOf(uint256 tokenId) external view returns (string memory) {
         _requireMinted(tokenId);
         return _thoughts[tokenId].rawText;
@@ -282,7 +281,8 @@ contract ThoughtNFT {
             bytes32 textHash,
             bytes32 promptHash,
             bytes32 provenanceHash,
-            bytes32 thoughtSpecId,
+            bytes32 thoughtSpecId_,
+            bytes32 thoughtSpecHash,
             uint256 pathId,
             address minter,
             uint64 mintedAt
@@ -295,28 +295,28 @@ contract ThoughtNFT {
             record.promptHash,
             record.provenanceHash,
             record.thoughtSpecId,
+            record.thoughtSpecHash,
             record.pathId,
             record.minter,
             record.mintedAt
         );
     }
 
-    function activeSpecMeta()
+    function thoughtSpecOf(uint256 tokenId)
         external
         view
-        returns (
-            bytes32 specId,
-            bytes32 specHash,
-            string memory ref,
-            address pointer,
-            uint32 byteLength,
-            uint64 registeredAt,
-            bool exists
-        )
+        returns (bytes32 specId, bytes32 specHash, string memory specName, string memory ref)
     {
-        specId = DEFAULT_THOUGHT_SPEC_ID;
-        (specHash, ref, pointer, byteLength, registeredAt, exists) =
-            IThoughtSpecRegistry(thoughtSpecRegistry).specMeta(specId);
+        _requireMinted(tokenId);
+        ThoughtRecord storage record = _thoughts[tokenId];
+        specId = record.thoughtSpecId;
+        specHash = record.thoughtSpecHash;
+        (bool exists, string memory specName_, bytes32 registeredHash, string memory ref_,,,) =
+            IThoughtSpecRegistry(thoughtSpecRegistry).thoughtSpecMeta(specId);
+        if (exists && registeredHash == specHash) {
+            specName = specName_;
+            ref = ref_;
+        }
     }
 
     function normalizeThought(string calldata rawText) external pure returns (string memory) {
@@ -453,16 +453,13 @@ contract ThoughtNFT {
     function mint(
         string calldata rawText,
         uint256 pathId,
-        bytes32 thoughtSpecId,
+        bytes32 providedThoughtSpecId,
+        bytes32 providedThoughtSpecHash,
         bytes32 promptHash,
         string calldata provenanceJson,
         uint256 deadline,
         bytes calldata pathSignature
     ) external nonReentrant returns (uint256 tokenId) {
-        if (!_isThoughtSpecRegistered(thoughtSpecId)) {
-            revert UnknownThoughtSpec(thoughtSpecId);
-        }
-
         bytes memory inputBytes = bytes(rawText);
         if (inputBytes.length == 0) {
             revert EmptyThoughtText();
@@ -498,6 +495,15 @@ contract ThoughtNFT {
         }
         bytes32 provenanceHash = keccak256(provenanceBytes);
 
+        if (
+            providedThoughtSpecId == bytes32(0) || providedThoughtSpecHash == bytes32(0)
+                || !IThoughtSpecRegistry(thoughtSpecRegistry).isRegisteredThoughtSpec(
+                    providedThoughtSpecId, providedThoughtSpecHash
+                )
+        ) {
+            revert InvalidThoughtSpecPair(providedThoughtSpecId, providedThoughtSpecHash);
+        }
+
         uint32 pathSerial =
             IPathNFT(pathNft).consumeUnit(pathId, PATH_MOVEMENT_THOUGHT, msg.sender, deadline, pathSignature);
 
@@ -511,7 +517,8 @@ contract ThoughtNFT {
             textHash: textHash,
             promptHash: promptHash,
             provenanceHash: provenanceHash,
-            thoughtSpecId: thoughtSpecId,
+            thoughtSpecId: providedThoughtSpecId,
+            thoughtSpecHash: providedThoughtSpecHash,
             pathId: pathId,
             pathSerial: pathSerial,
             minter: msg.sender,
@@ -519,7 +526,9 @@ contract ThoughtNFT {
         });
         _mint(msg.sender, tokenId);
         emit PathThoughtConsumed(pathId, msg.sender, pathSerial);
-        emit ThoughtMinted(tokenId, msg.sender, pathId, textHash, provenanceHash, thoughtSpecId, mintedAt);
+        emit ThoughtMinted(
+            tokenId, msg.sender, pathId, textHash, provenanceHash, providedThoughtSpecId, providedThoughtSpecHash, mintedAt
+        );
     }
 
     function tokenURI(uint256 tokenId) external view returns (string memory) {
@@ -528,18 +537,19 @@ contract ThoughtNFT {
         ThoughtRecord storage record = _thoughts[tokenId];
         string memory textHash = _bytes32ToHex(record.textHash);
         string memory provenanceHash = _bytes32ToHex(record.provenanceHash);
-        string memory thoughtSpecId = _bytes32ToHex(record.thoughtSpecId);
+        string memory thoughtSpecIdHex = _bytes32ToHex(record.thoughtSpecId);
+        string memory thoughtSpecHashHex = _bytes32ToHex(record.thoughtSpecHash);
         string memory svg = _renderSvg(record.rawText);
         string memory metadata = string.concat(
             '{"name":"THOUGHT #',
             _toString(tokenId),
-            '","description":"One THOUGHT minted with one PATH.',
+            '","description":"THOUGHT is a contract-canonical color-font work. Its record stores the canonical text, PATH movement use, provenance hash, and the registered THOUGHT.md version declared for the work.',
             '","image":"data:image/svg+xml;base64,',
             _base64Encode(bytes(svg)),
             '","attributes":',
-            _tokenAttributes(record, textHash, provenanceHash, thoughtSpecId),
+            _tokenAttributes(record, textHash, provenanceHash, thoughtSpecIdHex, thoughtSpecHashHex),
             ',"properties":',
-            _tokenProperties(record, textHash, provenanceHash, thoughtSpecId),
+            _tokenProperties(record, textHash, provenanceHash, thoughtSpecIdHex, thoughtSpecHashHex),
             ',"thought":',
             _tokenThought(record.rawText, record.provenanceJson),
             "}"
@@ -552,7 +562,8 @@ contract ThoughtNFT {
         ThoughtRecord storage record,
         string memory textHash,
         string memory provenanceHash,
-        string memory thoughtSpecId
+        string memory thoughtSpecIdHex,
+        string memory thoughtSpecHashHex
     ) private view returns (string memory) {
         return string.concat(
             '[{"trait_type":"path","value":"',
@@ -564,8 +575,10 @@ contract ThoughtNFT {
             _bytes32ToHex(record.promptHash),
             '"},{"trait_type":"provenanceHash","value":"',
             provenanceHash,
-            '"},{"trait_type":"thoughtSpec","value":"',
-            thoughtSpecId,
+            '"},{"trait_type":"Thought Spec ID","value":"',
+            thoughtSpecIdHex,
+            '"},{"trait_type":"Thought Spec Hash","value":"',
+            thoughtSpecHashHex,
             '"},{"trait_type":"colorFont","value":"',
             ColorFontV1Data.id(),
             '"},{"trait_type":"colorFontVersion","value":"',
@@ -584,7 +597,8 @@ contract ThoughtNFT {
         ThoughtRecord storage record,
         string memory textHash,
         string memory provenanceHash,
-        string memory thoughtSpecId
+        string memory thoughtSpecIdHex,
+        string memory thoughtSpecHashHex
     ) private view returns (string memory) {
         return string.concat(
             '{"rawText":',
@@ -598,7 +612,11 @@ contract ThoughtNFT {
             '","provenanceHash":"',
             provenanceHash,
             '","thoughtSpecId":"',
-            thoughtSpecId,
+            thoughtSpecIdHex,
+            '","thoughtSpecHash":"',
+            thoughtSpecHashHex,
+            '","pathSerial":"',
+            _toString(record.pathSerial),
             '","pathId":"',
             _toString(record.pathId),
             '","colorFont":"',
@@ -615,11 +633,6 @@ contract ThoughtNFT {
             _toString(record.mintedAt),
             "}"
         );
-    }
-
-    function _isThoughtSpecRegistered(bytes32 thoughtSpecId) private view returns (bool) {
-        (,,,,, bool exists) = IThoughtSpecRegistry(thoughtSpecRegistry).specMeta(thoughtSpecId);
-        return exists;
     }
 
     function _mint(address to, uint256 tokenId) private {
@@ -878,7 +891,7 @@ contract ThoughtNFT {
         uint256 encodedLength = 4 * ((data.length + 2) / 3);
         string memory result = new string(encodedLength);
 
-        assembly {
+        assembly ("memory-safe") {
             let tablePtr := add(table, 1)
             let dataPtr := data
             let endPtr := add(dataPtr, mload(data))
