@@ -9,6 +9,21 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 const defaultPathFeRelease = path.resolve(root, "../path/artifacts/sepolia/current/fe-release");
 const defaultOutRoot = path.resolve(root, "artifacts/sepolia/current/signing-os-packs");
+const curatedSourcePaths = [
+  "AGENTS.md",
+  "README.md",
+  "THOUGHT.v1.md",
+  "docs/ops/thought-signing-os-pack-book.md",
+  "docs/ops/thought-signing-os-pack-ops-review.md",
+  "evm/README.md",
+  "evm/foundry.toml",
+  "evm/src",
+  "evm/test",
+  "scripts/write-thought-signing-os-pack.mjs",
+  "spec/COLOR_FONT.v1.json",
+  "spec/COLOR_FONT.v1.md",
+  "spec/COLOR_FONT.v1.txt"
+];
 
 function argValue(name) {
   const idx = process.argv.indexOf(name);
@@ -135,21 +150,7 @@ function copyDir(src, dst, filter = () => true) {
 
 function sourceSnapshot(dst) {
   fs.mkdirSync(dst, { recursive: true });
-  const sourcePaths = [
-    "AGENTS.md",
-    "README.md",
-    "THOUGHT.v1.md",
-    "docs/ops/thought-signing-os-pack-book.md",
-    "evm/README.md",
-    "evm/foundry.toml",
-    "evm/src",
-    "evm/test",
-    "scripts/write-thought-signing-os-pack.mjs",
-    "spec/COLOR_FONT.v1.json",
-    "spec/COLOR_FONT.v1.md",
-    "spec/COLOR_FONT.v1.txt"
-  ];
-  const archive = spawnSync("git", ["-C", root, "archive", "--format=tar", "HEAD", "--", ...sourcePaths], {
+  const archive = spawnSync("git", ["-C", root, "archive", "--format=tar", "HEAD", "--", ...curatedSourcePaths], {
     stdio: ["ignore", "pipe", "inherit"],
     maxBuffer: 1024 * 1024 * 200
   });
@@ -283,7 +284,15 @@ load_env() {
 }
 
 deploy_keystore_address() {
-  jq -r '.address' "$SEPOLIA_DEPLOY_KEYSTORE_JSON" | sed 's/^0x//; s/^/0x/'
+  if [ -n "\${SEPOLIA_DEPLOY_KEYSTORE_PASSWORD_FILE:-}" ]; then
+    cast wallet address \\
+      --keystore "$SEPOLIA_DEPLOY_KEYSTORE_JSON" \\
+      --password-file "$SEPOLIA_DEPLOY_KEYSTORE_PASSWORD_FILE"
+  else
+    cast wallet address \\
+      --keystore "$SEPOLIA_DEPLOY_KEYSTORE_JSON" \\
+      --password "$SEPOLIA_DEPLOY_KEYSTORE_PASSWORD"
+  fi
 }
 
 assert_deployer_address() {
@@ -651,13 +660,15 @@ function pushLatestScript() {
 set -euo pipefail
 PACK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOST="$(hostname -s 2>/dev/null || hostname)"
-BRIDGE="/Users/bigu/Private/signing-os-bridge/incoming/$HOST"
+DEV_OS_SSH="\${DEV_OS_SSH:-bigu@192.168.0.104}"
+DEV_OS_BRIDGE_INCOMING="\${DEV_OS_BRIDGE_INCOMING:-/Users/bigu/Private/signing-os-bridge/incoming}"
 LATEST="$(ls -td "$PACK_ROOT"/results/* 2>/dev/null | head -1 || true)"
 [ -n "$LATEST" ] || { echo "no results found"; exit 1; }
-mkdir -p "$BRIDGE"
-DEST="$BRIDGE/$(basename "$LATEST")"
-rm -rf "$DEST"
-cp -R "$LATEST" "$DEST"
+command -v ssh >/dev/null 2>&1 || { echo "missing required tool: ssh"; exit 1; }
+command -v rsync >/dev/null 2>&1 || { echo "missing required tool: rsync"; exit 1; }
+ssh "$DEV_OS_SSH" "mkdir -p '$DEV_OS_BRIDGE_INCOMING/$HOST'"
+DEST="$DEV_OS_SSH:$DEV_OS_BRIDGE_INCOMING/$HOST/$(basename "$LATEST")/"
+rsync -a --delete "$LATEST/" "$DEST"
 echo "pushed latest result to $DEST"
 `);
 }
@@ -668,7 +679,8 @@ set -euo pipefail
 PACK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUN_ID="$(jq -r '.run_id' "$PACK_ROOT/inputs.json")"
 HOST="$(hostname -s 2>/dev/null || hostname)"
-BRIDGE="/Users/bigu/Private/signing-os-bridge/incoming/$HOST/history"
+DEV_OS_SSH="\${DEV_OS_SSH:-bigu@192.168.0.104}"
+DEV_OS_BRIDGE_INCOMING="\${DEV_OS_BRIDGE_INCOMING:-/Users/bigu/Private/signing-os-bridge/incoming}"
 POST="$PACK_ROOT/artifacts/postconditions.json"
 [ -r "$POST" ] || { echo "missing postconditions; run bin/postconditions first"; exit 1; }
 STATUS="$(jq -r '.overall_status' "$POST")"
@@ -706,20 +718,21 @@ Known deviations: none recorded
 Required next stages: sync FE release into inshell.art and run FE smoke tests
 EOF2
 (cd "$HISTORY" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt)
-mkdir -p "$BRIDGE"
-DEST="$BRIDGE/$RUN_ID"
-rm -rf "$DEST"
-cp -R "$HISTORY" "$DEST"
+command -v ssh >/dev/null 2>&1 || { echo "missing required tool: ssh"; exit 1; }
+command -v rsync >/dev/null 2>&1 || { echo "missing required tool: rsync"; exit 1; }
+ssh "$DEV_OS_SSH" "mkdir -p '$DEV_OS_BRIDGE_INCOMING/$HOST'"
+DEST="$DEV_OS_SSH:$DEV_OS_BRIDGE_INCOMING/$HOST/$RUN_ID/"
+rsync -a --delete "$HISTORY/" "$DEST"
 echo "pushed deployment history to $DEST"
 `);
 }
 
 function renderReadme(runId) {
-  return `# THOUGHT Signing OS Pack\n\nRun ID: \`${runId}\`\n\nStandalone Sepolia deploy pack for THOUGHT. It deploys THOUGHT contracts, registers \`THOUGHT.v1.md\`, configures the existing PATH movement \`THOUGHT\` to the deployed \`ThoughtNFT\`, and freezes that PATH movement config.\n\nThis pack is designed for Signing OS. It does not require a git checkout or npm install on Signing OS.\n\nUse \`RUNBOOK.md\` for the operator sequence.\n`;
+  return `# THOUGHT Signing OS Pack\n\nRun ID: \`${runId}\`\n\nStandalone Sepolia deploy pack for THOUGHT. It deploys THOUGHT contracts, registers \`THOUGHT.v1.md\`, configures the existing PATH movement \`THOUGHT\` to the deployed \`ThoughtNFT\`, and freezes that PATH movement config.\n\nThis pack is designed for Signing OS. It does not require a git checkout or npm install on Signing OS.\n\nThe \`source/\` directory is a curated deploy source snapshot from the exact source commit, not a full repository archive. See \`PACK-MANIFEST.json.source_snapshot\` for the included paths.\n\nUse \`RUNBOOK.md\` for the operator sequence.\n`;
 }
 
 function renderRunbook(runId) {
-  return `# THOUGHT Signing OS Runbook\n\nRun ID: \`${runId}\`\n\n## Sequence\n\n1. Put this whole pack directory on Signing OS.\n2. Ensure \`~/.opsec/path/env/sepolia.env\` exists and points to the Sepolia deploy keystore.\n3. Run \`bin/preflight\`.\n4. Run \`bin/verify\`.\n5. Connect ADMIN Ledger only for ADMIN actions.\n6. Run \`bin/approve\` and type the exact approval phrase.\n7. Run \`bin/apply\`.\n8. Run \`bin/postconditions\`.\n9. Run \`tools/push-latest-result.sh\` or \`tools/push-deployment-history.sh\` as needed.\n\n## Signers\n\n- Deployer: \`SEPOLIA_DEPLOY_SW_A\` from canonical keystore env.\n- Registry owner/admin: \`SEPOLIA_ADMIN_HW_A\` Ledger.\n- PATH movement admin: \`SEPOLIA_ADMIN_HW_A\` Ledger.\n\nThe deployer does not become registry owner. \`ThoughtSpecRegistry\` is deployed with the ADMIN address as immutable owner.\n`;
+  return `# THOUGHT Signing OS Runbook\n\nRun ID: \`${runId}\`\n\n## Sequence\n\n1. Put this whole pack directory on Signing OS.\n2. Ensure \`~/.opsec/path/env/sepolia.env\` exists and points to the Sepolia deploy keystore.\n3. Run \`bin/preflight\`.\n4. Run \`bin/verify\`.\n5. Connect ADMIN Ledger only for ADMIN actions.\n6. Run \`bin/approve\` and type the exact approval phrase.\n7. Run \`bin/apply\`.\n8. Run \`bin/postconditions\`.\n9. Run \`tools/push-latest-result.sh\` or \`tools/push-deployment-history.sh\` as needed.\n\n## Signers\n\n- Deployer: \`SEPOLIA_DEPLOY_SW_A\` from canonical keystore env.\n- Registry owner/admin: \`SEPOLIA_ADMIN_HW_A\` Ledger.\n- PATH movement admin: \`SEPOLIA_ADMIN_HW_A\` Ledger.\n\nThe deployer does not become registry owner. \`ThoughtSpecRegistry\` is deployed with the ADMIN address as immutable owner.\n\n## Source Snapshot\n\n\`source/\` is a curated deploy source snapshot from the exact source commit. It intentionally excludes frontend/devnode/local deploy scripts. The included paths are recorded in \`PACK-MANIFEST.json.source_snapshot.paths\`.\n\n## Ledger Risk\n\n\`bin/apply\` asks the ADMIN Ledger to sign \`registerThoughtSpec(string,string,bytes)\`. The spec calldata is large because it embeds \`THOUGHT.v1.md\`. If the Ledger refuses or blind signing is not enabled, stop, keep the failed result dir, write a recovery note from \`templates/recovery-note.md\`, push the latest result back with \`tools/push-latest-result.sh\`, and do not continue to PATH movement configuration.\n`;
 }
 
 function main() {
@@ -828,6 +841,12 @@ function main() {
     chain_id: 11155111,
     created_at: new Date().toISOString(),
     source_commit: repoCommit,
+    source_snapshot: {
+      type: "curated-deploy-source",
+      full_repository_archive: false,
+      source_commit: repoCommit,
+      paths: curatedSourcePaths
+    },
     path_release_repo_commit: pathRelease.releaseRepoCommit,
     path_qualified_repo_commit: pathRelease.qualifiedRepoCommit,
     pack_hash: packHash,
@@ -839,6 +858,7 @@ function main() {
     ready_for: "signing-os-sepolia-ops-review",
     pack_hash: packHash,
     inputs_sha256: `0x${sha256File(path.join(packRoot, "inputs.json"))}`,
+    source_snapshot_type: "curated-deploy-source",
     authority_model: {
       deployer: deploySignerRef,
       registry_owner: registryOwnerSignerRef,

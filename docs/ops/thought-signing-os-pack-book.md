@@ -62,6 +62,8 @@ Expected signer:
 
 - `SEPOLIA_DEPLOY_SW_A = 0x3e4fA9f09d8EDe66561145E1ef3bc127F80ED396`
 
+The deployer address must be resolved with Foundry (`cast wallet address --keystore ...`) rather than by assuming a top-level `.address` key in the keystore JSON. Canonical Foundry keystores may only contain `crypto`, `id`, and `version`.
+
 The pack must not embed secrets.
 
 ## Required Pack Layout
@@ -76,7 +78,7 @@ THOUGHT-SIGNING-OS-PACK/
   inputs.json
   path-dependency.json
   source/
-    THOUGHT source snapshot at the exact deploy commit
+    curated THOUGHT deploy source snapshot at the exact deploy commit
   artifacts/
     compiled contract artifacts or reproducible build evidence
   bin/
@@ -92,7 +94,7 @@ THOUGHT-SIGNING-OS-PACK/
     recovery-note.md
 ```
 
-`source/` must be an exact snapshot of the deploy source commit, not a live git checkout requirement.
+`source/` must be a snapshot from the exact deploy source commit, not a live git checkout requirement. It may be a curated deploy source snapshot, but if curated, `PACK-MANIFEST.json` must explicitly mark `source_snapshot.type = curated-deploy-source`, `full_repository_archive = false`, and list every included path.
 
 ## Required Inputs
 
@@ -198,6 +200,8 @@ The ADMIN txs must use Ledger signing by default:
 
 If a different ADMIN signing mode is supported, it must be explicitly documented and must not be the default for serious runs.
 
+The `registerThoughtSpec(string,string,bytes)` ADMIN call carries large calldata because it embeds the pinned spec bytes. Operators must rehearse or explicitly accept Ledger blind-signing behavior before a serious run. If the Ledger refuses the transaction, stop, preserve the result dir, write a recovery note, push the failed result back to Dev OS, and do not continue to PATH movement config.
+
 `apply` must write:
 
 ```text
@@ -231,15 +235,26 @@ artifacts/
 
 ### `tools/push-latest-result.sh`
 
-Must push the latest result dir back to Dev OS bridge incoming:
+Must push the latest result dir back to Dev OS bridge incoming over SSH/rsync, not by writing to a local `/Users/bigu/...` path on Signing OS:
 
 ```text
 /Users/bigu/Private/signing-os-bridge/incoming/<signing-os-host>/<result-dir>/
 ```
 
+Required default knobs:
+
+```sh
+DEV_OS_SSH="${DEV_OS_SSH:-bigu@192.168.0.104}"
+DEV_OS_BRIDGE_INCOMING="${DEV_OS_BRIDGE_INCOMING:-/Users/bigu/Private/signing-os-bridge/incoming}"
+```
+
 ### `tools/push-deployment-history.sh`
 
-Must create and push a qualified history folder after final postconditions pass.
+Must create and push a qualified history folder after final postconditions pass over SSH/rsync to:
+
+```text
+/Users/bigu/Private/signing-os-bridge/incoming/<signing-os-host>/<run-id>/
+```
 
 ## Required History Layout
 
