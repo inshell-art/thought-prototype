@@ -35,6 +35,14 @@ function gitCommit(repo) {
   return execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 }
 
+function gitCommitOrNull(repo) {
+  try {
+    return gitCommit(repo);
+  } catch {
+    return null;
+  }
+}
+
 function gitRemote(repo) {
   try {
     return execFileSync("git", ["-C", repo, "remote", "get-url", "origin"], { encoding: "utf8" }).trim();
@@ -83,6 +91,7 @@ function loadPathRelease(dir) {
   if (!fs.existsSync(releaseFile)) throw new Error(`Missing PATH FE release: ${releaseFile}`);
   const addresses = readJson(addressesFile);
   const release = readJson(releaseFile);
+  const pathRepoRoot = path.resolve(dir, "../../../..");
   return {
     dir,
     addressesFile,
@@ -96,7 +105,8 @@ function loadPathRelease(dir) {
     network: release.network,
     chainId: Number(release.chain_id),
     pathRunId: release.deploy_run_id,
-    pathRepoCommit: release.repo_commit
+    pathReleaseRepoCommit: release.repo_commit,
+    pathQualifiedRepoCommit: gitCommitOrNull(pathRepoRoot)
   };
 }
 
@@ -111,6 +121,9 @@ Run ID: \`${run.run_id}\`
 
 This bundle deploys THOUGHT against the already-qualified PATH Sepolia deployment. It does not redeploy PATH.
 
+PATH release source commit: \`${inputs.path.releaseRepoCommit}\`
+PATH qualified repo commit: \`${inputs.path.qualifiedRepoCommit ?? "not available"}\`
+
 ## Authority Model
 
 - PATH admin: \`${inputs.path.admin}\` (\`${inputs.path.adminSignerRef}\`)
@@ -124,6 +137,7 @@ This bundle deploys THOUGHT against the already-qualified PATH Sepolia deploymen
 
 \`\`\`bash
 cd /path/to/THOUGHT
+git checkout ${run.repo_commit}
 git rev-parse HEAD
 # expected: ${run.repo_commit}
 
@@ -267,9 +281,14 @@ function main() {
   const registryOwnerSignerRef = argValue("--registry-owner-signer-ref") ?? process.env.THOUGHT_REGISTRY_OWNER_SIGNER_REF ?? "SEPOLIA_ADMIN_HW_A";
   const registryOwnerRaw = argValue("--registry-owner") ?? process.env.THOUGHT_REGISTRY_OWNER;
   const pathAdminSignerRef = argValue("--path-admin-signer-ref") ?? process.env.PATH_ADMIN_SIGNER_REF ?? "SEPOLIA_ADMIN_HW_A";
+  const pathQualifiedRepoCommitOverride =
+    argValue("--path-qualified-repo-commit") ?? process.env.PATH_QUALIFIED_REPO_COMMIT;
 
   if (!Number.isInteger(movementQuota) || movementQuota <= 0) throw new Error("movement quota must be a positive integer");
   const pathRelease = loadPathRelease(pathFeRelease);
+  if (pathQualifiedRepoCommitOverride) {
+    pathRelease.pathQualifiedRepoCommit = pathQualifiedRepoCommitOverride;
+  }
   if (pathRelease.network !== "sepolia" || pathRelease.chainId !== 11155111) {
     throw new Error(`PATH release is not Sepolia: ${pathRelease.network}/${pathRelease.chainId}`);
   }
@@ -290,7 +309,8 @@ function main() {
     repo_commit: repoCommit,
     repo_remote: gitRemote(root),
     path_release_dir: path.relative(root, pathFeRelease),
-    path_repo_commit: pathRelease.pathRepoCommit,
+    path_release_repo_commit: pathRelease.pathReleaseRepoCommit,
+    path_qualified_repo_commit: pathRelease.pathQualifiedRepoCommit,
     path_run_id: pathRelease.pathRunId
   };
 
@@ -302,7 +322,8 @@ function main() {
     path: {
       releaseDir: path.relative(root, pathFeRelease),
       runId: pathRelease.pathRunId,
-      repoCommit: pathRelease.pathRepoCommit,
+      releaseRepoCommit: pathRelease.pathReleaseRepoCommit,
+      qualifiedRepoCommit: pathRelease.pathQualifiedRepoCommit,
       pathNft: pathRelease.pathNft,
       pathPulseAdapter: pathRelease.pathPulseAdapter,
       pulseAuction: pathRelease.pulseAuction,
@@ -352,7 +373,8 @@ function main() {
     files: ["run.json", "inputs.json", "path-config-template.json", "RUNBOOK.md"],
     source: {
       repo_commit: repoCommit,
-      path_repo_commit: pathRelease.pathRepoCommit,
+      path_release_repo_commit: pathRelease.pathReleaseRepoCommit,
+      path_qualified_repo_commit: pathRelease.pathQualifiedRepoCommit,
       spec_sha256: spec.sha256
     }
   };
