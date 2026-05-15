@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "run_id": "sepolia-thought-deploy-20260515T031414Z",
+  "network": "sepolia",
+  "generated_at": "2026-05-15T03:14:14.820Z",
+  "files": [
+    "run.json",
+    "inputs.json",
+    "path-config-template.json",
+    "RUNBOOK.md"
+  ],
+  "source": {
+    "repo_commit": "5bce62a1b8909fe96e10a4fb283d3b934a5e367d",
+    "path_release_repo_commit": "e078ac33a354ae0783ba382fddb7ecde29d931de",
+    "path_qualified_repo_commit": "8ac1638e88f07ff2fb94745c20f081abb427aa7d",
+    "spec_sha256": "0x9f3ad3361862a491abed833a5d50a722c4a89de531fd523416d74b6041a099ec"
+  }
+}

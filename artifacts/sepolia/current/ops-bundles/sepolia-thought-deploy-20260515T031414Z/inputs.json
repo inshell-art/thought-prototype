@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "network": "sepolia",
+  "chain_id": 11155111,
+  "run_id": "sepolia-thought-deploy-20260515T031414Z",
+  "path": {
+    "releaseDir": "../path/artifacts/sepolia/current/fe-release",
+    "runId": "sepolia-deploy-20260514T122153Z-safe-treasury-curator",
+    "releaseRepoCommit": "e078ac33a354ae0783ba382fddb7ecde29d931de",
+    "qualifiedRepoCommit": "8ac1638e88f07ff2fb94745c20f081abb427aa7d",
+    "pathNft": "0x84915746a1f06850CF41a3E90C60c2DcA3fa116D",
+    "pathPulseAdapter": "0x8Cd52b431F4e932c5fDd8E49073c2c5bc1bfabF2",
+    "pulseAuction": "0x1071e99928Bdf020794a5E3e5B9c920450Ac9b39",
+    "admin": "0xa31Fe4bC2A9A4EeA01275A6c4b4be2Aa994A0981",
+    "adminSignerRef": "SEPOLIA_ADMIN_HW_A",
+    "movement": "THOUGHT",
+    "movementBytes32": "0x54484f5547485400000000000000000000000000000000000000000000000000",
+    "movementQuota": 1
+  },
+  "thought": {
+    "repoCommit": "5bce62a1b8909fe96e10a4fb283d3b934a5e367d",
+    "deploySignerRef": "SEPOLIA_DEPLOY_SW_A",
+    "registryOwner": "0xa31Fe4bC2A9A4EeA01275A6c4b4be2Aa994A0981",
+    "registryOwnerSignerRef": "SEPOLIA_ADMIN_HW_A",
+    "spec": {
+      "name": "THOUGHT.v1.md",
+      "ref": "THOUGHT.v1.md",
+      "id": "0xe201170ae183f114064f4492cbc4942f7d3d68b74a08d3dc4b4f61edec213d78",
+      "hash": "0x1abb9da7ba36102726375510e66afe255f8c6e0d771b4c3b90c5d22a9b8eb909",
+      "byteLength": 8549,
+      "sha256": "0x9f3ad3361862a491abed833a5d50a722c4a89de531fd523416d74b6041a099ec",
+      "file": "THOUGHT.v1.md"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "pathNft": "0x84915746a1f06850CF41a3E90C60c2DcA3fa116D",
+  "movement": "THOUGHT",
+  "movementBytes32": "0x54484f5547485400000000000000000000000000000000000000000000000000",
+  "calls": [
+    {
+      "signerRef": "SEPOLIA_ADMIN_HW_A",
+      "function": "setMovementConfig(bytes32,address,uint32)",
+      "args": [
+        "0x54484f5547485400000000000000000000000000000000000000000000000000",
+        "<THOUGHT_NFT_ADDRESS>",
+        1
+      ]
+    },
+    {
+      "signerRef": "SEPOLIA_ADMIN_HW_A",
+      "function": "freezeMovementConfig(bytes32)",
+      "args": [
+        "0x54484f5547485400000000000000000000000000000000000000000000000000"
+      ]
+    }
+  ]
+}
