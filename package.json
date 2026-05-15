@@ -15,6 +15,7 @@
     "test:evm": "cd evm && forge test",
     "deploy:evm-local": "./scripts/deploy-evm-local.sh",
     "ops:bundle:sepolia": "node scripts/write-sepolia-ops-bundle.mjs",
+    "ops:pack:sepolia": "node scripts/write-thought-signing-os-pack.mjs",
     "devnode:start": "node scripts/start-devnode.mjs",
     "devnode:deploy": "node scripts/deploy-devnode.mjs",
     "devnode:mint-paths": "node scripts/mint-dev-paths.mjs",
